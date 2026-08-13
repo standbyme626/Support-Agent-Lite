@@ -21,6 +21,17 @@ _ASCII_TERM = re.compile(r"[a-z0-9]+")
 _CJK_TERM = re.compile(rf"[{_CJK}]")
 
 
+def tokenize(text: str) -> set[str]:
+    """ASCII words + CJK bigrams. Single CJK chars are excluded: they
+    are too noisy for grounding decisions (e.g. 你/好 matching any doc)."""
+    normalized = text.lower()
+    terms = set(_ASCII_TERM.findall(normalized))
+    cjk = "".join(_CJK_TERM.findall(normalized))
+    if len(cjk) > 1:
+        terms.update(cjk[i : i + 2] for i in range(len(cjk) - 1))
+    return terms
+
+
 @dataclass(frozen=True)
 class FaqDocument:
     doc_id: str
@@ -120,14 +131,7 @@ class Retriever:
 
     @staticmethod
     def _tokenize(text: str) -> set[str]:
-        """ASCII words + CJK bigrams. Single CJK chars are excluded: they
-        are too noisy for grounding decisions (e.g. 你/好 matching any doc)."""
-        normalized = text.lower()
-        terms = set(_ASCII_TERM.findall(normalized))
-        cjk = "".join(_CJK_TERM.findall(normalized))
-        if len(cjk) > 1:
-            terms.update(cjk[i : i + 2] for i in range(len(cjk) - 1))
-        return terms
+        return tokenize(text)
 
     def _compute_idf(self) -> dict[str, float]:
         """Document-frequency weights: distinctive terms dominate scoring."""

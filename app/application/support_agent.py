@@ -102,13 +102,19 @@ class SupportAgent:
 
     @staticmethod
     def _rule_summary(context: AgentContext) -> str:
-        ticket = context.ticket
-        if ticket is not None:
-            return (
+        parts: list[str] = []
+        if context.recalled_memories:
+            facts = [m.fact for m in context.recalled_memories]
+            parts.append(f"参考历史记忆：{'；'.join(facts)}")
+        if context.ticket is not None:
+            ticket = context.ticket
+            parts.append(
                 f"用户反馈「{context.latest_user_text}」，关联工单 {ticket.id}（{ticket.status.value}）："
                 f"{ticket.title}。"
             )
-        return f"用户消息：{context.latest_user_text}。"
+        else:
+            parts.append(f"用户消息：{context.latest_user_text}。")
+        return " ".join(parts)
 
     @staticmethod
     def _rule_reply(context: AgentContext) -> str:

@@ -6,10 +6,11 @@ agent can reason without channel/session leakage.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from app.domain.envelope import InboundEnvelope
 from app.domain.identity import Session, User
+from app.domain.memory import Memory
 from app.domain.message import Message
 from app.domain.ticket import Ticket
 from app.infrastructure.repositories import MessageRepository
@@ -26,6 +27,7 @@ class AgentContext:
     ticket_summary: str
     recent_messages: list[Message]
     latest_user_text: str
+    recalled_memories: list[Memory] = field(default_factory=list)
 
 
 class ContextBuilder:
@@ -35,7 +37,14 @@ class ContextBuilder:
         self._messages = messages
         self._recent_limit = recent_limit
 
-    def build(self, envelope: InboundEnvelope, user: User, session: Session, ticket: Ticket | None) -> AgentContext:
+    def build(
+        self,
+        envelope: InboundEnvelope,
+        user: User,
+        session: Session,
+        ticket: Ticket | None,
+        recalled_memories: list[Memory] | None = None,
+    ) -> AgentContext:
         recent = self._messages.recent(session.id, limit=self._recent_limit)
         return AgentContext(
             user_id=user.id,
@@ -45,6 +54,7 @@ class ContextBuilder:
             ticket_summary=self._summarize_ticket(ticket, recent),
             recent_messages=recent,
             latest_user_text=envelope.text,
+            recalled_memories=list(recalled_memories or []),
         )
 
     @staticmethod

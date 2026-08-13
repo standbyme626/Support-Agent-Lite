@@ -18,11 +18,13 @@ from uuid import uuid4
 
 from app.application.context_builder import ContextBuilder
 from app.application.intent_router import IntentRouter
+from app.application.memory_service import MemoryService
 from app.application.retriever import RAGAnswer, RetrievalHit, Retriever
 from app.application.support_agent import AgentAnalysis, SupportAgent
 from app.application.ticket_service import ResolutionKind, TicketResolver, TicketService
 from app.domain.envelope import InboundEnvelope
 from app.domain.identity import Session, User
+from app.domain.memory import Memory
 from app.domain.message import Message
 from app.domain.ticket import Ticket
 from app.infrastructure.repositories import MessageRepository
@@ -51,6 +53,7 @@ class WorkflowResult:
     ticket: Ticket | None = None
     sources: list[RetrievalHit] = field(default_factory=list)
     analysis: AgentAnalysis | None = None
+    recalled: list[Memory] = field(default_factory=list)
 
 
 class SupportWorkflow:
@@ -65,6 +68,7 @@ class SupportWorkflow:
         context_builder: ContextBuilder,
         agent: SupportAgent,
         messages: MessageRepository,
+        memory: MemoryService | None = None,
     ) -> None:
         self._router = router
         self._retriever = retriever
@@ -73,6 +77,7 @@ class SupportWorkflow:
         self._context_builder = context_builder
         self._agent = agent
         self._messages = messages
+        self._memory = memory
         self._session_ticket: dict[str, str] = {}
 
     def handle(self, envelope: InboundEnvelope, user: User, session: Session) -> WorkflowResult:
@@ -108,12 +113,15 @@ class SupportWorkflow:
 
         ticket = resolution.ticket
         if resolution.kind == ResolutionKind.CREATE_NEW:
-            ticket = self._tickets.create(user.id, title=envelope.text, description=envelope.text)
+            ticket = self._tickets.create(user_id=user.id, title=envelope.text, description=envelope.text)
         if ticket is None:
             raise RuntimeError(f"support intent resolved without a ticket: {resolution.kind}")
         self._session_ticket[session.id] = ticket.id
 
-        context = self._context_builder.build(envelope, user, session, ticket)
+        recalled: list[Memory] = []
+        if self._memory is not None:
+            recalled = [hit.memory for hit in self._memory.recall(user.id, envelope.text)]
+        context = self._context_builder.build(envelope, user, session, ticket, recalled_memories=recalled)
         analysis = self._agent.analyze(context)
         self._record_reply(analysis.reply_draft, user, session, envelope)
         return WorkflowResult(
@@ -121,6 +129,7 @@ class SupportWorkflow:
             reply=analysis.reply_draft,
             ticket=ticket,
             analysis=analysis,
+            recalled=recalled,
         )
 
     def _handle_progress(self, envelope: InboundEnvelope, user: User, session: Session) -> WorkflowResult:

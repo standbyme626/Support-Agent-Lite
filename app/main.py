@@ -16,6 +16,7 @@ from app.application.context_builder import ContextBuilder
 from app.application.identity_service import IdentityResolver
 from app.application.ingress_service import IngressService
 from app.application.intent_router import IntentRouter
+from app.application.memory_service import MemoryService
 from app.application.retriever import Retriever
 from app.application.session_service import SessionService
 from app.application.support_agent import SupportAgent
@@ -24,6 +25,7 @@ from app.application.workflow import SupportWorkflow
 from app.domain.approval import ApprovalStatus, InvalidApprovalDecision
 from app.domain.envelope import InboundEnvelope
 from app.domain.identity import Session, User
+from app.domain.memory import MemoryKind
 from app.domain.ticket import InvalidStateTransition
 from app.infrastructure.db import apply_migrations, connect
 from app.infrastructure.idempotency import IdempotencyStore
@@ -31,6 +33,7 @@ from app.infrastructure.llm import LLMClient, llm_client_from_env
 from app.infrastructure.repositories import (
     ApprovalRepository,
     ChannelIdentityRepository,
+    MemoryRepository,
     MessageRepository,
     SessionRepository,
     TicketStore,
@@ -42,17 +45,23 @@ _SEED_DIR = Path(__file__).resolve().parent.parent / "seed" / "faq"
 
 @dataclass
 class OpsServices:
-    """Operator-facing services (tickets + independent approvals)."""
+    """Operator-facing services (tickets + independent approvals + memory)."""
 
     tickets: TicketService
     approvals: ApprovalService
+    memory: MemoryService
+
+
+def build_memory(conn: Any, store: TicketStore) -> MemoryService:
+    return MemoryService(store, MemoryRepository(conn))
 
 
 def build_ops(conn: Any, store: TicketStore) -> OpsServices:
-    """Assemble operator + approval services on the same DB connection."""
+    """Assemble operator + approval + memory services on the same DB connection."""
     return OpsServices(
         tickets=TicketService(store),
         approvals=ApprovalService(store, ApprovalRepository(conn)),
+        memory=build_memory(conn, store),
     )
 
 
@@ -62,7 +71,7 @@ def build_workflow(
     seed_dir: str | Path = _SEED_DIR,
     llm: LLMClient | None = None,
 ) -> SupportWorkflow:
-    """Assemble the Phase 4 workflow (intent -> RAG or ticket -> agent)."""
+    """Assemble the Phase 4/6 workflow (intent -> RAG or ticket -> agent + memory)."""
     return SupportWorkflow(
         router=IntentRouter(),
         retriever=Retriever(seed_dir),
@@ -71,6 +80,7 @@ def build_workflow(
         context_builder=ContextBuilder(MessageRepository(conn)),
         agent=SupportAgent(llm=llm),
         messages=MessageRepository(conn),
+        memory=build_memory(conn, store),
     )
 
 
@@ -162,6 +172,7 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
                 "workflow": getattr(downstream, "kind", None),
                 "ticket_id": getattr(downstream, "ticket", None) and downstream.ticket.id,
                 "reply": getattr(downstream, "reply", None),
+                "recalled": [m.fact for m in getattr(downstream, "recalled", [])],
             },
         )
 
@@ -187,8 +198,12 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
 
     @app.post("/tickets/{ticket_id}/close")
     def close(ticket_id: str, payload: dict | None = None) -> Any:
+        """Close a resolved ticket. CLOSED triggers memory extraction
+        (AC-09): stable facts are stored for next-session recall."""
         try:
-            return _ops().tickets.close(ticket_id, payload)
+            result = _ops().tickets.close(ticket_id, payload)
+            _ops().memory.remember(ticket_id)
+            return result
         except InvalidStateTransition as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
@@ -219,6 +234,15 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=f"invalid status: {status}") from exc
         return _ops().approvals.list(parsed)
+
+    @app.get("/memories")
+    def list_memories(user_id: str | None = None, kind: str | None = None) -> Any:
+        """Long-term memory (AC-09). Filter by canonical user and kind."""
+        try:
+            parsed_kind = MemoryKind(kind) if kind else None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=f"invalid kind: {kind}") from exc
+        return _ops().memory.list(user_id, parsed_kind)
 
     @app.post("/approvals/{approval_id}/approve")
     def approve(approval_id: str, payload: dict | None = None) -> Any:

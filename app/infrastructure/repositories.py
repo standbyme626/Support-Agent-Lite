@@ -8,6 +8,7 @@ from typing import Protocol
 
 from app.domain.approval import Approval, ApprovalStatus, InvalidApprovalDecision
 from app.domain.identity import ChannelIdentity, Session, User
+from app.domain.memory import Memory, MemoryKind
 from app.domain.message import Message
 from app.domain.ticket import (
     InvalidStateTransition,
@@ -245,6 +246,65 @@ class ApprovalRepository(SqliteRepository):
         )
 
 
+class MemoryRepository(SqliteRepository):
+    """Long-term memory store, keyed to the canonical user."""
+
+    def add(self, memory: Memory) -> Memory:
+        self._conn.execute(
+            "INSERT INTO memories (id, user_id, ticket_id, kind, fact, confidence, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                memory.id,
+                memory.user_id,
+                memory.ticket_id,
+                memory.kind.value,
+                memory.fact,
+                memory.confidence,
+                memory.created_at.isoformat(),
+            ),
+        )
+        return memory
+
+    def list_by_user(self, user_id: str, kind: MemoryKind | None = None) -> list[Memory]:
+        if kind is None:
+            rows = self._conn.execute(
+                "SELECT * FROM memories WHERE user_id = ? ORDER BY created_at", (user_id,)
+            ).fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM memories WHERE user_id = ? AND kind = ? ORDER BY created_at",
+                (user_id, kind.value),
+            ).fetchall()
+        return [self._row_to_memory(r) for r in rows]
+
+    def list_all(self, kind: MemoryKind | None = None) -> list[Memory]:
+        if kind is None:
+            rows = self._conn.execute("SELECT * FROM memories ORDER BY created_at").fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM memories WHERE kind = ? ORDER BY created_at", (kind.value,)
+            ).fetchall()
+        return [self._row_to_memory(r) for r in rows]
+
+    def list_by_ticket(self, ticket_id: str) -> list[Memory]:
+        rows = self._conn.execute(
+            "SELECT * FROM memories WHERE ticket_id = ? ORDER BY created_at", (ticket_id,)
+        ).fetchall()
+        return [self._row_to_memory(r) for r in rows]
+
+    @staticmethod
+    def _row_to_memory(row: sqlite3.Row) -> Memory:
+        return Memory(
+            id=row["id"],
+            user_id=row["user_id"],
+            ticket_id=row["ticket_id"],
+            kind=MemoryKind(row["kind"]),
+            fact=row["fact"],
+            confidence=row["confidence"],
+            created_at=_parse_dt(row["created_at"]),
+        )
+
+
 class TicketStore(SqliteRepository):
     """Transactional Ticket + TicketEvent store.
 
@@ -347,6 +407,7 @@ __all__ = [
     "ChannelIdentityRepository",
     "SessionRepository",
     "MessageRepository",
+    "MemoryRepository",
     "TicketStore",
     "TicketRepository",
     "ApprovalRepository",
