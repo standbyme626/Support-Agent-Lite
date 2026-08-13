@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-Phase 2 — 身份与工单核心(Identity + Ticket Core):`IdentityResolver`(渠道身份 → 规范用户)、`TicketResolver`(显式单号 → 会话单号 → 活跃单 → 澄清)、`TicketService` 已就绪,AC-05 跨渠道续单与 AC-06 多单澄清已由测试覆盖。
+Phase 3 — 真实渠道接入(Real Channel Ingress):WeCom / Feishu 适配器(Raw → `InboundEnvelope`,不触达下游)、`POST /webhooks/{channel}` 端点、message_id 幂等(AC-03)已就绪。
 
 ## 快速开始
 
