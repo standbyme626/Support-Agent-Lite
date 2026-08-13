@@ -1,0 +1,27 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+*.egg-info/
+
+# secrets
+.env
+
+# runtime data
+runtime/
+*.db
+*.db-shm
+*.db-wal
+logs/
+
+# legacy project (read-only reference)
+/reference/
+
+# local tooling config (kept on disk, not part of the project)
+opencode.json
+.agents/
+.beads/
+.claude/
+.vscode/
