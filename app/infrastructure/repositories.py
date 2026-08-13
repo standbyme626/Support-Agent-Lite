@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Protocol
 
 from app.domain.identity import ChannelIdentity, Session, User
+from app.domain.message import Message
 from app.domain.ticket import (
     InvalidStateTransition,
     Ticket,
@@ -117,6 +118,48 @@ class SessionRepository(SqliteRepository):
         return [Session(id=r["id"], user_id=r["user_id"], channel=r["channel"], channel_conversation_id=r["channel_conversation_id"], created_at=_parse_dt(r["created_at"])) for r in rows]
 
 
+class MessageRepository(SqliteRepository):
+    """Per-session chat message history (recent messages for context)."""
+
+    def add(self, message: Message) -> Message:
+        self._conn.execute(
+            "INSERT INTO messages (id, session_id, user_id, role, text, trace_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                message.id,
+                message.session_id,
+                message.user_id,
+                message.role,
+                message.text,
+                message.trace_id,
+                message.created_at.isoformat(),
+            ),
+        )
+        return message
+
+    def recent(self, session_id: str, limit: int = 6) -> list[Message]:
+        rows = self._conn.execute(
+            "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (session_id, limit),
+        ).fetchall()
+        return list(
+            reversed(
+                [
+                    Message(
+                        id=r["id"],
+                        session_id=r["session_id"],
+                        user_id=r["user_id"],
+                        role=r["role"],
+                        text=r["text"],
+                        trace_id=r["trace_id"],
+                        created_at=_parse_dt(r["created_at"]),
+                    )
+                    for r in rows
+                ]
+            )
+        )
+
+
 class TicketStore(SqliteRepository):
     """Transactional Ticket + TicketEvent store.
 
@@ -218,6 +261,7 @@ __all__ = [
     "UserRepository",
     "ChannelIdentityRepository",
     "SessionRepository",
+    "MessageRepository",
     "TicketStore",
     "TicketRepository",
     "InvalidStateTransition",
