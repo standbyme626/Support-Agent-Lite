@@ -303,7 +303,19 @@ class SupportWorkflow:
                 "memory_recall",
                 {"facts": [m.fact for m in recalled]},
             )
-        context = self._context_builder.build(envelope, user, session, ticket, recalled_memories=recalled)
+        actor_role = ""
+        if self._roles is not None:
+            actor_role = self._roles.primary_role(user.id)
+        context = self._context_builder.build(
+            envelope,
+            user,
+            session,
+            ticket,
+            recalled_memories=recalled,
+            conversation_type=conversation.conversation_type.value,
+            conversation_purpose=conversation.purpose.value,
+            actor_role=actor_role,
+        )
         analysis = self._agent.analyze(context)
         self._trace_event(
             envelope.trace_id,

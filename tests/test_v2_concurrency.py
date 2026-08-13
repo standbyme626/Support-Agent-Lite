@@ -128,6 +128,40 @@ def test_concurrent_webhook_different_messages_no_interference() -> None:
     assert conn.execute("SELECT COUNT(*) FROM tickets").fetchone()[0] == 10
 
 
+def test_concurrent_first_contact_same_identity_no_500() -> None:
+    """AC-58: 25 concurrent FIRST messages from the same (channel, user) —
+    no IntegrityError 500, exactly one canonical user, all messages process."""
+    ingress, conn, _ = build_ingress(db_path=":memory:")
+    results: list[str] = []
+    errors: list[str] = []
+    lock = threading.Lock()
+
+    def send(i: int) -> None:
+        try:
+            result = ingress.process(
+                "wecom",
+                {"MsgId": f"mid_{i}", "FromUserName": "race_zhang", "Content": "A3 空调坏了", "CreateTime": 1000 + i, "conversation_id": "repair_group_1"},
+            )
+            with lock:
+                results.append(result.user.id)
+        except Exception as exc:
+            with lock:
+                errors.append(repr(exc))
+
+    threads = [threading.Thread(target=send, args=(i,)) for i in range(25)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    assert len(results) == 25
+    assert len(set(results)) == 1  # one canonical user, no duplicates
+    users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+    identities = conn.execute("SELECT COUNT(*) FROM channel_identities").fetchone()[0]
+    assert users == 1 and identities == 1
+
+
 def test_idempotency_release_on_failure() -> None:
     """Business failure releases the idempotency claim: a retry reprocesses."""
     conn = connect(":memory:")

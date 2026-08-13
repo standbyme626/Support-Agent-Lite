@@ -29,5 +29,11 @@ class RoleService:
     def has_role(self, user_id: str, role: UserRole) -> bool:
         return self._repo.has_role(user_id, role)
 
+    def primary_role(self, user_id: str) -> str:
+        roles = self._repo.list_by_user(user_id)
+        if not roles:
+            return ""
+        return roles[0].role.value
+
     def roles(self, user_id: str) -> list[RoleAssignment]:
         return self._repo.list_by_user(user_id)

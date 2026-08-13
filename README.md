@@ -8,10 +8,10 @@
 
 ## 当前状态
 
-V1(7 个 Phase)与 **V2(Full Collaboration Layer)均已完成**,**178 个测试全绿**:
+V1(7 个 Phase)与 **V2(Full Collaboration Layer)均已完成**,**179 个测试全绿**:
 
 - V1:AC-01 ~ AC-10 全部通过(139 测试基线,提交 `8627b0f`)
-- V2:AC-11 ~ AC-30 全部通过(41 个 V2 测试:协作层 12 · 并发 4 · HITL/通知 6 · 协议契约 14 · 离线 Demo 5)
+- V2:AC-11 ~ AC-30 全部通过(42 个 V2 测试:协作层 12 · 并发 5 · HITL/通知 6 · 协议契约 14 · 离线 Demo 5)
 
 | Phase | 内容 | 提交 |
 | --- | --- | --- |
@@ -44,7 +44,7 @@ V1(7 个 Phase)与 **V2(Full Collaboration Layer)均已完成**,**178 个测试�
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                 # 178 passed
+pytest                 # 179 passed
 uvicorn app.main:app   # http://127.0.0.1:8000
 ```
 
@@ -96,7 +96,7 @@ curl -s http://127.0.0.1:8000/tickets/T0001/case
 
 | 指标 | 目标 | 实测 |
 | --- | --- | --- |
-| 全量测试 | — | **178 passed** |
+| 全量测试 | — | **179 passed** |
 | Golden Path AC-01~AC-10 | 全绿 | 10/10 |
 | V2 验收 AC-11~AC-30 | 全绿 | **20/20**(41 个测试) |
 | FAQ 检索 Recall@3 | ≥ 90% | **100%**(14/14) |
@@ -119,3 +119,4 @@ curl -s http://127.0.0.1:8000/tickets/T0001/case
 - `docs/LEGACY_PORT_MAP.md` — 旧代码移植 / 改写 / 忽略对照表
 - `V1_TO_V2_ARCHITECTURE_AUDIT.md` — V1→V2 架构审计(只读产物)
 - `docs/reference/LEGACY_ARCHITECTURE_AUDIT.md` — 旧项目架构审计(仅参考)
+

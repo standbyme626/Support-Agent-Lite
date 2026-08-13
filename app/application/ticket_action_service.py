@@ -211,6 +211,12 @@ class TicketActionService:
                 conversation_id=conversation_id,
             )
             event_id = f"{ticket_id}:resolved:{trace_id}"
+            if note:
+                base = ticket.summary or ticket.title or ticket.description
+                self._store.set_operational(
+                    ticket_id,
+                    summary=f"{base}\n处理结果：{note}"[:600],
+                )
             origin = self._origin(channel, conversation_id)
             public = self._targets.requester_public(ticket)
             private = self._targets.requester_private(ticket, ticket.user_id)

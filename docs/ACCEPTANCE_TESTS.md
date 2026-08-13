@@ -1,7 +1,7 @@
 # ACCEPTANCE_TESTS
 
 Definition of Done: AC-01 .. AC-30 all green. (V1: AC-01..10; V2 adds
-AC-11..30. Result: 41 V2 tests across 5 files, see
+AC-11..30. Result: 42 V2 tests across 5 files, see
 `docs/V2_IMPLEMENTATION_REPORT.md`.)
 
 ## AC-01 WeCom FAQ

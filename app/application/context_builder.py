@@ -28,6 +28,9 @@ class AgentContext:
     recent_messages: list[Message]
     latest_user_text: str
     recalled_memories: list[Memory] = field(default_factory=list)
+    conversation_type: str = ""  # V2: DM | GROUP
+    conversation_purpose: str = ""  # V2: REQUESTER | OPERATOR | APPROVAL
+    actor_role: str = ""  # V2: requester | operator | approver
 
 
 class ContextBuilder:
@@ -44,6 +47,9 @@ class ContextBuilder:
         session: Session,
         ticket: Ticket | None,
         recalled_memories: list[Memory] | None = None,
+        conversation_type: str = "",
+        conversation_purpose: str = "",
+        actor_role: str = "",
     ) -> AgentContext:
         recent = self._messages.recent(session.id, limit=self._recent_limit)
         return AgentContext(
@@ -55,6 +61,9 @@ class ContextBuilder:
             recent_messages=recent,
             latest_user_text=envelope.text,
             recalled_memories=list(recalled_memories or []),
+            conversation_type=conversation_type,
+            conversation_purpose=conversation_purpose,
+            actor_role=actor_role,
         )
 
     @staticmethod

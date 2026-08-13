@@ -36,7 +36,7 @@ approval, RAG grounding, single Ticket API.
 | --- | --- |
 | V1 commit | `8627b0f` (139 passed) |
 | V1 AC-01 ~ AC-10 | ✅ still green (golden path, workflow, memory, operator API, RAG eval) |
-| V2 full suite | 178 passed, 0 failed |
+| V2 full suite | 179 passed, 0 failed |
 
 ## 3. Schema changes (migrations)
 
@@ -90,7 +90,8 @@ approval, RAG grounding, single Ticket API.
 - `ingress_service.py` — atomic idempotency claim in the **same
   transaction** as the business effect; conversation purpose routing;
   release on failure.
-- `workflow.py` — purpose-based routing (REQUESTER/OPERATOR/APPROVAL),
+- `workflow.py` — purpose-based routing (REQUESTER/OPERATOR/APPROVAL), agent context now carries
+  conversation type/purpose + actor role;
   confirmation/rejection detection, NO_ANSWER → real handoff ticket,
   persisted session-ticket context, other-intent continuation with exactly
   one active ticket.
@@ -127,6 +128,18 @@ official text-message callback format (path/90239) carries no group chat id
 and no official page could prove the capability during V2. Business
 `OPERATOR` conversations work through simulation/registration-bound
 conversation ids. Legacy `hmac-sha256(timestamp:nonce)` is not used.
+
+## 7b. Spec-gap completions (post-report audit)
+
+- §42 persisted summary: `set_operational` on create (per message) AND on
+  resolve (appends 处理结果 note), so the ticket summary evolves with the
+  lifecycle instead of a runtime recent-6 concat.
+- §43 agent context: `AgentContext` now carries `conversation_type`,
+  `conversation_purpose`, `actor_role` (populated from the conversation and
+  the canonical user's primary role).
+- §58 identity concurrency: added
+  `test_concurrent_first_contact_same_identity_no_500` (25 concurrent first
+  messages, same channel identity → 0 errors, exactly 1 canonical user).
 
 ## 8. Concurrency fixes (verified by tests)
 
@@ -171,14 +184,14 @@ conversation ids. Legacy `hmac-sha256(timestamp:nonce)` is not used.
 | AC-29 Full case trace (`/tickets/{id}/case`) | ✅ |
 | AC-30 V1 regression | ✅ |
 
-**V2 test inventory (41):** collaboration 12 · concurrency 4 · HITL &
+**V2 test inventory (42):** collaboration 12 · concurrency 5 · HITL &
 notifications 6 · protocol contract 14 · offline demo 5.
 
 ## 11. Data metrics (measured, not fabricated)
 
 | Metric | Value |
 | --- | --- |
-| Full pytest | **178 passed** (0 failed) |
+| Full pytest | **179 passed** (0 failed) |
 | V1 regression | 137 V1 tests green (139 at baseline; suite grew with V2 docs/tests) |
 | V2 acceptance | 41/41 green |
 | RAG Recall@3 | **100%** (14/14 eval queries, gate ≥ 90%) |
