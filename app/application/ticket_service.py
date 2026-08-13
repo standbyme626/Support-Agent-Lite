@@ -62,6 +62,11 @@ class TicketService:
             if t.status in (TicketStatus.OPEN, TicketStatus.IN_PROGRESS)
         ]
 
+    def recent(self, user_id: str) -> Ticket | None:
+        """Most recent ticket of a user regardless of status (progress queries)."""
+        tickets = self._store.list_by_user(user_id)
+        return tickets[-1] if tickets else None
+
 
 class TicketResolver:
     """Decides which ticket a message refers to, for a canonical user.

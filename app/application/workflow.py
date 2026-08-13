@@ -131,11 +131,19 @@ class SupportWorkflow:
             reply = self._clarify_reply(resolution.candidates)
             self._record_reply(reply, user, session, envelope)
             return WorkflowResult(kind=WorkflowKind.CLARIFY, reply=reply)
-        if resolution.ticket is None:
-            reply = "您还没有进行中的工单，可以描述您的问题，我会为您创建工单。"
+        ticket = resolution.ticket
+        if ticket is None:
+            # No active ticket: fall back to the most recent ticket of any
+            # status so users can still check on resolved/closed work.
+            latest = self._tickets.recent(user.id)
+            if latest is not None:
+                self._session_ticket[session.id] = latest.id
+                reply = f"工单 {latest.id}（{latest.title}）当前状态：{latest.status.value}。"
+                self._record_reply(reply, user, session, envelope)
+                return WorkflowResult(kind=WorkflowKind.PROGRESS, reply=reply, ticket=latest)
+            reply = "您还没有工单，可以描述您的问题，我会为您创建工单。"
             self._record_reply(reply, user, session, envelope)
             return WorkflowResult(kind=WorkflowKind.PROGRESS, reply=reply)
-        ticket = resolution.ticket
         self._session_ticket[session.id] = ticket.id
         reply = f"工单 {ticket.id}（{ticket.title}）当前状态：{ticket.status.value}，我们会持续跟进。"
         self._record_reply(reply, user, session, envelope)

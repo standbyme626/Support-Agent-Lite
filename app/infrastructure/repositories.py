@@ -6,6 +6,7 @@ import sqlite3
 from datetime import datetime
 from typing import Protocol
 
+from app.domain.approval import Approval, ApprovalStatus, InvalidApprovalDecision
 from app.domain.identity import ChannelIdentity, Session, User
 from app.domain.message import Message
 from app.domain.ticket import (
@@ -160,6 +161,90 @@ class MessageRepository(SqliteRepository):
         )
 
 
+class ApprovalRepository(SqliteRepository):
+    """Approval store. Independent of tickets (invariant #6)."""
+
+    def create(self, approval: Approval) -> Approval:
+        self._conn.execute(
+            "INSERT INTO approvals (id, ticket_id, action, status, requested_by, reason, decided_by, decided_at, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                approval.id,
+                approval.ticket_id,
+                approval.action,
+                approval.status.value,
+                approval.requested_by,
+                approval.reason,
+                approval.decided_by,
+                approval.decided_at.isoformat() if approval.decided_at else None,
+                approval.created_at.isoformat(),
+            ),
+        )
+        return approval
+
+    def get(self, approval_id: str) -> Approval | None:
+        row = self._conn.execute("SELECT * FROM approvals WHERE id = ?", (approval_id,)).fetchone()
+        return self._row_to_approval(row) if row else None
+
+    def list_by_status(self, status: ApprovalStatus | None = None) -> list[Approval]:
+        if status is None:
+            rows = self._conn.execute("SELECT * FROM approvals ORDER BY created_at").fetchall()
+        else:
+            rows = self._conn.execute(
+                "SELECT * FROM approvals WHERE status = ? ORDER BY created_at", (status.value,)
+            ).fetchall()
+        return [self._row_to_approval(r) for r in rows]
+
+    def list_by_ticket(self, ticket_id: str) -> list[Approval]:
+        rows = self._conn.execute(
+            "SELECT * FROM approvals WHERE ticket_id = ? ORDER BY created_at", (ticket_id,)
+        ).fetchall()
+        return [self._row_to_approval(r) for r in rows]
+
+    def decide(
+        self,
+        approval_id: str,
+        target: ApprovalStatus,
+        *,
+        decided_by: str,
+        reason: str | None = None,
+    ) -> Approval:
+        """PENDING -> APPROVED/REJECTED, atomically. Idempotency guard:
+        a second decision on the same approval fails (rowcount == 0).
+        """
+        if target == ApprovalStatus.PENDING:
+            raise ValueError("cannot decide to PENDING")
+        with self._conn:
+            cursor = self._conn.execute(
+                "UPDATE approvals SET status = ?, decided_by = ?, decided_at = ?, reason = COALESCE(?, reason) "
+                "WHERE id = ? AND status = ?",
+                (target.value, decided_by, _ts(), reason, approval_id, ApprovalStatus.PENDING.value),
+            )
+        if cursor.rowcount == 0:
+            existing = self.get(approval_id)
+            if existing is None:
+                raise KeyError(f"approval not found: {approval_id}")
+            raise InvalidApprovalDecision(f"approval already decided: {existing.status.value}")
+        approval = self.get(approval_id)
+        if approval is None:
+            raise KeyError(f"approval not found: {approval_id}")
+        return approval
+
+    @staticmethod
+    def _row_to_approval(row: sqlite3.Row) -> Approval:
+        return Approval(
+            id=row["id"],
+            ticket_id=row["ticket_id"],
+            action=row["action"],
+            status=ApprovalStatus(row["status"]),
+            requested_by=row["requested_by"],
+            reason=row["reason"],
+            decided_by=row["decided_by"],
+            decided_at=_parse_dt(row["decided_at"]) if row["decided_at"] else None,
+            created_at=_parse_dt(row["created_at"]),
+        )
+
+
 class TicketStore(SqliteRepository):
     """Transactional Ticket + TicketEvent store.
 
@@ -264,5 +349,6 @@ __all__ = [
     "MessageRepository",
     "TicketStore",
     "TicketRepository",
+    "ApprovalRepository",
     "InvalidStateTransition",
 ]
