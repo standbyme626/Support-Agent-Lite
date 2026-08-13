@@ -20,7 +20,11 @@ class TicketStatus(str, Enum):
 class TicketEventType(str, Enum):
     CREATED = "created"
     STARTED = "started"
+    CLAIMED = "claimed"
     RESOLVED = "resolved"
+    REJECTED = "resolution_rejected"
+    ESCALATED = "escalated"
+    FORCE_CLOSED = "force_closed"
     CLOSED = "closed"
 
 
@@ -28,19 +32,25 @@ class InvalidStateTransition(ValueError):
     """Raised when a status transition is not allowed by the state machine."""
 
 
+class AlreadyClaimed(ValueError):
+    """Raised when a claim loses the race or targets a non-claimable ticket."""
+
+
 # Strict transition table: status -> allowed next statuses.
 ALLOWED_TRANSITIONS: dict[TicketStatus, frozenset[TicketStatus]] = {
     TicketStatus.OPEN: frozenset({TicketStatus.IN_PROGRESS}),
-    TicketStatus.IN_PROGRESS: frozenset({TicketStatus.RESOLVED}),
-    TicketStatus.RESOLVED: frozenset({TicketStatus.CLOSED}),
+    TicketStatus.IN_PROGRESS: frozenset({TicketStatus.RESOLVED, TicketStatus.CLOSED}),
+    TicketStatus.RESOLVED: frozenset({TicketStatus.CLOSED, TicketStatus.IN_PROGRESS}),
     TicketStatus.CLOSED: frozenset(),
 }
 
 # Which event type is recorded for a given transition.
 EVENT_FOR_TRANSITION: dict[tuple[TicketStatus, TicketStatus], TicketEventType] = {
-    (TicketStatus.OPEN, TicketStatus.IN_PROGRESS): TicketEventType.STARTED,
+    (TicketStatus.OPEN, TicketStatus.IN_PROGRESS): TicketEventType.CLAIMED,
     (TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED): TicketEventType.RESOLVED,
     (TicketStatus.RESOLVED, TicketStatus.CLOSED): TicketEventType.CLOSED,
+    (TicketStatus.RESOLVED, TicketStatus.IN_PROGRESS): TicketEventType.REJECTED,
+    (TicketStatus.IN_PROGRESS, TicketStatus.CLOSED): TicketEventType.FORCE_CLOSED,
 }
 
 
@@ -61,6 +71,12 @@ class Ticket:
     status: TicketStatus = TicketStatus.OPEN
     created_at: datetime = field(default_factory=_now)
     updated_at: datetime = field(default_factory=_now)
+    assignee_user_id: str | None = None
+    summary: str | None = None
+    category: str | None = None
+    priority: str | None = None
+    queue: str | None = None
+    source_conversation_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -72,3 +88,6 @@ class TicketEvent:
     event_type: TicketEventType
     payload: dict | None = None
     created_at: datetime = field(default_factory=_now)
+    actor_user_id: str | None = None
+    trace_id: str | None = None
+    conversation_id: str | None = None

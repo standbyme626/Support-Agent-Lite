@@ -67,6 +67,23 @@ class TicketService:
         tickets = self._store.list_by_user(user_id)
         return tickets[-1] if tickets else None
 
+    def get(self, ticket_id: str) -> Ticket | None:
+        return self._store.get(ticket_id)
+
+    def list_by_queue(self, queue: str | None) -> list[Ticket]:
+        return self._store.list_by_queue(queue)
+
+    def set_operational(
+        self,
+        ticket_id: str,
+        *,
+        summary: str | None = None,
+        category: str | None = None,
+        priority: str | None = None,
+        queue: str | None = None,
+    ) -> Ticket:
+        return self._store.set_operational(ticket_id, summary=summary, category=category, priority=priority, queue=queue)
+
 
 class TicketResolver:
     """Decides which ticket a message refers to, for a canonical user.

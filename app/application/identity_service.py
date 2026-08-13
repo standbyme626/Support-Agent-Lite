@@ -32,17 +32,30 @@ class IdentityResolver:
             user = self._users.get(existing.user_id)
             if user is not None:
                 return user
-        user = self._users.create(
-            User(id=new_id("user_"), display_name=display_name or channel_user_id)
-        )
-        self._identities.create(
-            ChannelIdentity(
-                id=new_id("ci_"),
-                user_id=user.id,
-                channel=channel,
-                channel_user_id=channel_user_id,
+        try:
+            user = self._users.create(
+                User(id=new_id("user_"), display_name=display_name or channel_user_id)
             )
-        )
+            self._identities.create(
+                ChannelIdentity(
+                    id=new_id("ci_"),
+                    user_id=user.id,
+                    channel=channel,
+                    channel_user_id=channel_user_id,
+                )
+            )
+        except Exception:
+            # Concurrent first-contact race: another request created the
+            # identity; re-read instead of surfacing a UNIQUE constraint 500.
+            # NOTE: no rollback here — the failed statement is already
+            # aborted and a rollback would discard the outer transaction
+            # (including an in-flight idempotency claim).
+            existing = self._identities.find(channel, channel_user_id)
+            if existing is not None:
+                user = self._users.get(existing.user_id)
+                if user is not None:
+                    return user
+            raise
         return user
 
     def bind(self, channel: str, channel_user_id: str, user_id: str) -> User:

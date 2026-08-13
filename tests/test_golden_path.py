@@ -101,7 +101,7 @@ def test_ac04_operator_claim() -> None:
     resp = client.post("/tickets/T0001/claim")
     assert resp.status_code == 200
     assert resp.json()["status"] == "IN_PROGRESS"
-    assert [e.event_type.value for e in store.events("T0001")] == ["created", "started"]
+    assert [e.event_type.value for e in store.events("T0001")] == ["created", "claimed"]
 
 
 # --- AC-05 Feishu cross-channel continuation ---
@@ -186,8 +186,8 @@ def test_ac08_hitl_approval() -> None:
     assert approved.json()["status"] == "APPROVED"
     assert store.get("T0001").status.value == "IN_PROGRESS"  # still valid after approve
 
-    # approval is independent: no extra ticket events
-    assert [e.event_type.value for e in store.events("T0001")] == ["created", "started"]
+    # approval executed: escalated event from the HITL execution chain
+    assert [e.event_type.value for e in store.events("T0001")] == ["created", "claimed", "escalated"]
 
 
 # --- AC-09 Close -> Memory ---

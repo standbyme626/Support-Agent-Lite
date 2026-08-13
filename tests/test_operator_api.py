@@ -40,7 +40,7 @@ def test_ac04_claim_open_to_in_progress() -> None:
     assert body["status"] == "IN_PROGRESS"
 
     events = store.events("T0001")
-    assert [e.event_type.value for e in events] == ["created", "started"]
+    assert [e.event_type.value for e in events] == ["created", "claimed"]
 
 
 def test_claim_requires_open_ticket() -> None:
@@ -68,7 +68,7 @@ def test_full_lifecycle_claim_resolve_close() -> None:
     assert closed.json()["status"] == "CLOSED"
 
     events = store.events("T0001")
-    assert [e.event_type.value for e in events] == ["created", "started", "resolved", "closed"]
+    assert [e.event_type.value for e in events] == ["created", "claimed", "resolved", "closed"]
 
 
 def test_invalid_transitions_return_409() -> None:
@@ -99,7 +99,7 @@ def test_ac08_escalate_creates_pending_approval_ticket_unchanged() -> None:
     approval = resp.json()
     assert approval["ticket_id"] == "T0001"
     assert approval["status"] == "PENDING"
-    assert approval["action"] == "escalate"
+    assert approval["action"] == "ESCALATE"
 
     # ticket remains valid (status untouched, still OPEN)
     ticket = store.get("T0001")
@@ -170,11 +170,15 @@ def test_invalid_approval_status_filter_returns_400() -> None:
     assert client.get("/approvals?status=WEIRD").status_code == 400
 
 
-def test_escalate_custom_action() -> None:
+def test_escalate_action_whitelist() -> None:
+    """V2: approvable actions are a whitelist, never free strings."""
     client, _ = _client()
     _make_ticket(client)
     resp = client.post("/tickets/T0001/escalate", json={"action": "emergency_restart"})
-    assert resp.json()["action"] == "emergency_restart"
+    assert resp.status_code == 400
+    ok = client.post("/tickets/T0001/escalate", json={"action": "ESCALATE", "reason": "r"})
+    assert ok.status_code == 200
+    assert ok.json()["action"] == "ESCALATE"
 
 
 # --- end-to-end: webhook -> operator lifecycle ---

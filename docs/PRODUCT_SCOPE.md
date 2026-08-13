@@ -10,19 +10,20 @@
 Channel (WeCom / Feishu)
   → InboundEnvelope
   → Canonical Identity
-  → Session
+  → Conversation (type + purpose)
   → Intent (FAQ | Support | ProgressQuery)
   → RAG answer OR Ticket Resolver
   → Ticket lifecycle
   → Agent context/summary
-  → Operator collaboration
-  → Approval (for high-risk actions)
-  → Resolve / Close
-  → Memory extraction
+  → Operator collaboration (claim / resolve, atomic)
+  → Approval (for high-risk actions) → HITL execution
+  → Requester confirmation (cross-channel allowed)
+  → Close → Memory extraction
   → Recall in next session
+  → Notifications (public / private / internal) via transactional outbox
 ```
 
-## Out of scope (v1)
+## Out of scope
 
 - Multi-Agent
 - MCP
@@ -37,6 +38,18 @@ Channel (WeCom / Feishu)
 - Complex SLA
 - Legacy compatibility APIs
 - Multiple Ticket APIs (exactly one)
+- LangGraph suspend/resume (HITL is a deterministic execution chain)
+
+## In scope since V2
+
+- Conversation as a first-class model (`ConversationType`, `ConversationPurpose`)
+- Canonical Operator identity + persisted assignment
+- Requester public / private / internal three-tier visibility
+- Transactional notification outbox + audience policy + target resolver
+- Channel protocol contracts strictly from official docs
+  (`docs/CHANNEL_PROTOCOL_MATRIX.md`), honest capability flags
+- Requester confirmation closure, resolution rejection, force close
+- HITL execution chain (action request → approval → execute once)
 
 ## Design principles
 

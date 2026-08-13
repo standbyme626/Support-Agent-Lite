@@ -1,0 +1,31 @@
+[
+  {
+    "channel": "wecom",
+    "channel_conversation_id": "repair_group_1",
+    "conversation_type": "GROUP",
+    "purpose": "REQUESTER",
+    "queue": "facility",
+    "location": "A3栋"
+  },
+  {
+    "channel": "wecom",
+    "channel_conversation_id": "op_group_facility",
+    "conversation_type": "GROUP",
+    "purpose": "OPERATOR",
+    "queue": "facility",
+    "location": "A3栋"
+  },
+  {
+    "channel": "wecom",
+    "channel_conversation_id": "approval_room",
+    "conversation_type": "GROUP",
+    "purpose": "APPROVAL"
+  },
+  {
+    "channel": "feishu",
+    "channel_conversation_id": "oc_op_facility",
+    "conversation_type": "GROUP",
+    "purpose": "OPERATOR",
+    "queue": "facility"
+  }
+]

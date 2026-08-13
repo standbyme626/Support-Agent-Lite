@@ -139,14 +139,15 @@ def test_ac06_multiple_active_tickets_require_clarification() -> None:
 
 
 def test_no_answer_protection_for_low_confidence() -> None:
-    """Invariant #7 end-to-end: low-confidence query -> explicit no-answer, no ticket."""
+    """AC-21 (V2): low-confidence query -> no free-form answer; the reply is
+    truthful and a real human-handoff ticket exists (no fake '转人工')."""
     client, store = _client()
     resp = _wecom(client, "今天天气怎么样", "m1")
     body = resp.json()
     assert body["workflow"] == "no_answer"
-    assert "人工" in body["reply"]
-    assert body["ticket_id"] is None
-    assert store.list_by_user(body["user_id"]) == []
+    assert body["ticket_id"] == "T0001"  # real handoff ticket, not a lie
+    tickets = store.list_by_user(body["user_id"])
+    assert [t.id for t in tickets] == ["T0001"]
 
 
 def test_other_intent_reply() -> None:

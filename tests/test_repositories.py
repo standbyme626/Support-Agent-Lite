@@ -73,7 +73,7 @@ def test_transition_writes_event_atomically(conn, users) -> None:
     ticket = store.get("T1001")
     assert ticket.status == TicketStatus.IN_PROGRESS  # type: ignore[union-attr]
     events = store.events("T1001")
-    assert [e.event_type for e in events] == [TicketEventType.CREATED, TicketEventType.STARTED]
+    assert [e.event_type for e in events] == [TicketEventType.CREATED, TicketEventType.CLAIMED]
     assert events[1].payload == {"actor": "operator_1"}
 
 
@@ -99,7 +99,7 @@ def test_full_lifecycle(conn, users) -> None:
     types = [e.event_type for e in store.events("T1001")]
     assert types == [
         TicketEventType.CREATED,
-        TicketEventType.STARTED,
+        TicketEventType.CLAIMED,
         TicketEventType.RESOLVED,
         TicketEventType.CLOSED,
     ]

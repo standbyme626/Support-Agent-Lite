@@ -13,7 +13,9 @@ def test_valid_transitions() -> None:
     for current, target in [
         (TicketStatus.OPEN, TicketStatus.IN_PROGRESS),
         (TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED),
+        (TicketStatus.IN_PROGRESS, TicketStatus.CLOSED),  # force close (V2)
         (TicketStatus.RESOLVED, TicketStatus.CLOSED),
+        (TicketStatus.RESOLVED, TicketStatus.IN_PROGRESS),  # resolution rejected (V2)
     ]:
         validate_transition(current, target)  # should not raise
 
@@ -23,8 +25,6 @@ def test_valid_transitions() -> None:
     [
         (TicketStatus.OPEN, TicketStatus.RESOLVED),
         (TicketStatus.OPEN, TicketStatus.CLOSED),
-        (TicketStatus.IN_PROGRESS, TicketStatus.CLOSED),
-        (TicketStatus.RESOLVED, TicketStatus.IN_PROGRESS),
         (TicketStatus.CLOSED, TicketStatus.OPEN),
         (TicketStatus.CLOSED, TicketStatus.CLOSED),
         (TicketStatus.IN_PROGRESS, TicketStatus.IN_PROGRESS),

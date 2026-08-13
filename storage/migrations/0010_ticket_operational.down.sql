@@ -1,0 +1,2 @@
+-- ALTER TABLE ADD COLUMN has no portable down migration in sqlite;
+-- a full rebuild would be required. Documented here for completeness.

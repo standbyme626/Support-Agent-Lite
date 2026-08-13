@@ -5,9 +5,11 @@ The end-to-end path every new feature must serve. If a capability does not serve
 ```text
 企业微信 / 飞书
         ↓
-Channel Adapter (Raw → InboundEnvelope)
+Channel Adapter (verify → Raw → InboundEnvelope)
         ↓
 Canonical Identity (channel_user_id → user)
+        ↓
+Conversation (type + purpose: REQUESTER / OPERATOR / APPROVAL)
         ↓
 Session (belongs to user)
         ↓
@@ -21,21 +23,31 @@ Intent Router (FAQ | Support | ProgressQuery | Other)
  answer        ↓
  (no ticket)   Agent (summary / recommendation only)
                 ↓
-             Workflow
+             Workflow (purpose routing)
                 ↓
-           Human Operator (claim / resolve / close)
+             Ticket Created → 3 outputs:
+               · requester public receipt
+               · requester private detail (DM)
+               · operator work item
                 ↓
-           High-risk Action → Approval (independent)
+             Operator (explicit ticket id; claim / resolve)
                 ↓
-           Resolve / Close
+             High-risk Action → Approval (independent) → execute once
                 ↓
-           Memory Extraction (stable facts)
+             RESOLVED → Requester Confirmation (cross-channel OK)
                 ↓
-           Next Session Recall
+             CLOSED → Memory Extraction (stable facts)
+                ↓
+             Next Session Recall
 ```
 
-## Milestones
+## V2 milestones
 
-1. **Milestone 1 (identity core)**: `wecom/zhangsan → user_001 → create T1001`, then `feishu/ou_001 → user_001 → continue T1001`, verify NO T1002.
-2. **Milestone 2 (intent split)**: FAQ → RAG → answer (no ticket); Support → ticket. Knowledge workflow and business workflow are separate.
-3. **Milestone 3 (closure loop)**: Ticket → Operator → Approval → Close → Memory → New Session Recall.
+4. **Milestone 4 (collaboration layer)**: conversation purpose routing,
+   canonical operator claim (atomic, 1 winner), assignment persisted,
+   requester public/private/internal split, transactional outbox with
+   dedupe, official-shape channel contracts (mock network, not protocol).
+5. **Milestone 5 (closure + HITL + reliability)**: requester confirmation
+   closes the ticket (cross-channel), rejection returns to processing,
+   ESCALATE → APPROVE → action executed once, case trace covers the full
+   lifecycle, outbox survives simulated delivery failure.
