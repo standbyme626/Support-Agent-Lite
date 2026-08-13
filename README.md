@@ -1,14 +1,14 @@
 # Support Agent Lite
 
-Cross-channel enterprise support agent.
+跨渠道企业支持代理(Cross-Channel Enterprise Support Agent)。
 
-User-centric and workflow-first reimplementation, derived from lessons learned in the legacy `support-agent-platform` project (available read-only in `reference/`).
+以**用户为中心(User-Centric)、工作流优先(Workflow-First)**的架构重新实现,汲取旧项目 `support-agent-platform` 的经验教训(旧项目以只读方式保存在 `reference/`)。
 
-## Status
+## 当前状态
 
-Phase 0 — Architecture Bootstrap (no business functionality yet).
+Phase 1 — 领域基础(Domain Foundation):核心领域实体、状态机与仓储层已就绪,含事务性 Ticket+TicketEvent 写入。尚无业务逻辑。
 
-## Quickstart
+## 快速开始
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -17,13 +17,13 @@ pytest
 uvicorn app.main:app
 ```
 
-## Documentation
+## 文档
 
-- `docs/PRODUCT_SCOPE.md` — what the product does and does not do
-- `docs/ARCHITECTURE.md` — architecture and invariants
-- `docs/DOMAIN_MODEL.md` — domain entities and state machines
-- `docs/GOLDEN_PATH.md` — the golden path through the system
-- `docs/ACCEPTANCE_TESTS.md` — acceptance contract (AC-01..AC-10)
-- `docs/DEVELOPMENT_PLAN.md` — phased development plan
-- `docs/LEGACY_PORT_MAP.md` — what to port/adapt/rewrite/ignore from legacy
-- `docs/reference/LEGACY_ARCHITECTURE_AUDIT.md` — legacy architecture audit (reference only)
+- `docs/PRODUCT_SCOPE.md` — 产品范围(做什么 / 不做什么)
+- `docs/ARCHITECTURE.md` — 架构与核心不变量
+- `docs/DOMAIN_MODEL.md` — 领域实体与状态机
+- `docs/GOLDEN_PATH.md` — 系统黄金路径
+- `docs/ACCEPTANCE_TESTS.md` — 验收契约(AC-01 ~ AC-10)
+- `docs/DEVELOPMENT_PLAN.md` — 分阶段开发计划
+- `docs/LEGACY_PORT_MAP.md` — 旧代码移植 / 改写 / 忽略对照表
+- `docs/reference/LEGACY_ARCHITECTURE_AUDIT.md` — 旧项目架构审计(仅参考)
