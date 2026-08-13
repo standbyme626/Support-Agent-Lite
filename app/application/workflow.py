@@ -28,6 +28,7 @@ from app.domain.memory import Memory
 from app.domain.message import Message
 from app.domain.ticket import Ticket
 from app.infrastructure.repositories import MessageRepository
+from app.infrastructure.trace import TraceLogger
 
 _NO_ANSWER_REPLY = (
     "抱歉，我没有找到足够相关的资料来回答这个问题。"
@@ -69,6 +70,7 @@ class SupportWorkflow:
         agent: SupportAgent,
         messages: MessageRepository,
         memory: MemoryService | None = None,
+        trace: TraceLogger | None = None,
     ) -> None:
         self._router = router
         self._retriever = retriever
@@ -78,27 +80,52 @@ class SupportWorkflow:
         self._agent = agent
         self._messages = messages
         self._memory = memory
+        self._trace = trace
         self._session_ticket: dict[str, str] = {}
 
     def handle(self, envelope: InboundEnvelope, user: User, session: Session) -> WorkflowResult:
         self._record_reply(envelope.text, user, session, envelope, role="user")
         decision = self._router.route(envelope.text)
+        self._trace_event(
+            envelope.trace_id,
+            "intent",
+            {"intent": decision.intent, "confidence": decision.confidence, "reason": decision.reason},
+        )
 
         if decision.intent == "faq":
-            return self._handle_faq(envelope, user, session)
-        if decision.intent == "support":
-            return self._handle_support(envelope, user, session)
-        if decision.intent == "progress_query":
-            return self._handle_progress(envelope, user, session)
-        return self._handle_other(envelope, user, session)
+            result = self._handle_faq(envelope, user, session)
+        elif decision.intent == "support":
+            result = self._handle_support(envelope, user, session)
+        elif decision.intent == "progress_query":
+            result = self._handle_progress(envelope, user, session)
+        else:
+            result = self._handle_other(envelope, user, session)
+
+        self._trace_event(
+            envelope.trace_id,
+            "reply",
+            {"workflow": result.kind.value, "reply": result.reply},
+        )
+        return result
 
     # --- intent branches ---
 
     def _handle_faq(self, envelope: InboundEnvelope, user: User, session: Session) -> WorkflowResult:
         answer: RAGAnswer | None = self._retriever.answer(envelope.text)
         if answer is None:
+            self._trace_event(envelope.trace_id, "retrieval", {"grounded": False})
             self._record_reply(_NO_ANSWER_REPLY, user, session, envelope)
             return WorkflowResult(kind=WorkflowKind.NO_ANSWER, reply=_NO_ANSWER_REPLY)
+        self._trace_event(
+            envelope.trace_id,
+            "retrieval",
+            {
+                "grounded": True,
+                "hits": [
+                    {"doc_id": h.document.doc_id, "score": round(h.score, 3)} for h in answer.hits
+                ],
+            },
+        )
         self._record_reply(answer.text, user, session, envelope)
         return WorkflowResult(kind=WorkflowKind.FAQ_ANSWER, reply=answer.text, sources=answer.hits)
 
@@ -108,11 +135,17 @@ class SupportWorkflow:
         )
         if resolution.kind == ResolutionKind.CLARIFY:
             reply = self._clarify_reply(resolution.candidates)
+            self._trace_event(
+                envelope.trace_id,
+                "ticket",
+                {"resolution": resolution.kind.value, "candidates": [t.id for t in resolution.candidates]},
+            )
             self._record_reply(reply, user, session, envelope)
             return WorkflowResult(kind=WorkflowKind.CLARIFY, reply=reply)
 
         ticket = resolution.ticket
-        if resolution.kind == ResolutionKind.CREATE_NEW:
+        created = resolution.kind == ResolutionKind.CREATE_NEW
+        if created:
             ticket = self._tickets.create(user_id=user.id, title=envelope.text, description=envelope.text)
         if ticket is None:
             raise RuntimeError(f"support intent resolved without a ticket: {resolution.kind}")
@@ -121,8 +154,29 @@ class SupportWorkflow:
         recalled: list[Memory] = []
         if self._memory is not None:
             recalled = [hit.memory for hit in self._memory.recall(user.id, envelope.text)]
+        self._trace_event(
+            envelope.trace_id,
+            "ticket",
+            {"resolution": resolution.kind.value, "ticket_id": ticket.id, "created": created},
+        )
+        if recalled:
+            self._trace_event(
+                envelope.trace_id,
+                "memory_recall",
+                {"facts": [m.fact for m in recalled]},
+            )
         context = self._context_builder.build(envelope, user, session, ticket, recalled_memories=recalled)
         analysis = self._agent.analyze(context)
+        self._trace_event(
+            envelope.trace_id,
+            "agent",
+            {
+                "summary": analysis.summary,
+                "category": analysis.category,
+                "priority": analysis.priority_suggestion,
+                "action": analysis.recommended_action,
+            },
+        )
         self._record_reply(analysis.reply_draft, user, session, envelope)
         return WorkflowResult(
             kind=WorkflowKind.TICKET,
@@ -138,6 +192,11 @@ class SupportWorkflow:
         )
         if resolution.kind == ResolutionKind.CLARIFY:
             reply = self._clarify_reply(resolution.candidates)
+            self._trace_event(
+                envelope.trace_id,
+                "ticket",
+                {"resolution": resolution.kind.value, "candidates": [t.id for t in resolution.candidates]},
+            )
             self._record_reply(reply, user, session, envelope)
             return WorkflowResult(kind=WorkflowKind.CLARIFY, reply=reply)
         ticket = resolution.ticket
@@ -147,6 +206,11 @@ class SupportWorkflow:
             latest = self._tickets.recent(user.id)
             if latest is not None:
                 self._session_ticket[session.id] = latest.id
+                self._trace_event(
+                    envelope.trace_id,
+                    "ticket",
+                    {"resolution": "recent", "ticket_id": latest.id},
+                )
                 reply = f"工单 {latest.id}（{latest.title}）当前状态：{latest.status.value}。"
                 self._record_reply(reply, user, session, envelope)
                 return WorkflowResult(kind=WorkflowKind.PROGRESS, reply=reply, ticket=latest)
@@ -154,6 +218,11 @@ class SupportWorkflow:
             self._record_reply(reply, user, session, envelope)
             return WorkflowResult(kind=WorkflowKind.PROGRESS, reply=reply)
         self._session_ticket[session.id] = ticket.id
+        self._trace_event(
+            envelope.trace_id,
+            "ticket",
+            {"resolution": resolution.kind.value, "ticket_id": ticket.id},
+        )
         reply = f"工单 {ticket.id}（{ticket.title}）当前状态：{ticket.status.value}，我们会持续跟进。"
         self._record_reply(reply, user, session, envelope)
         return WorkflowResult(kind=WorkflowKind.PROGRESS, reply=reply, ticket=ticket)
@@ -163,6 +232,10 @@ class SupportWorkflow:
         return WorkflowResult(kind=WorkflowKind.OTHER, reply=_OTHER_REPLY)
 
     # --- helpers ---
+
+    def _trace_event(self, trace_id: str, stage: str, payload: dict) -> None:
+        if self._trace is not None:
+            self._trace.event(trace_id, stage, payload)
 
     def _record_reply(
         self,

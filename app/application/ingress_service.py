@@ -18,6 +18,7 @@ from app.application.session_service import SessionService
 from app.domain.envelope import InboundEnvelope
 from app.domain.identity import Session, User
 from app.infrastructure.idempotency import IdempotencyStore
+from app.infrastructure.trace import TraceLogger
 
 
 @dataclass
@@ -39,12 +40,14 @@ class IngressService:
         sessions: SessionService,
         idempotency: IdempotencyStore,
         downstream: Callable[[InboundEnvelope, User, Session], object] | None = None,
+        trace: TraceLogger | None = None,
     ) -> None:
         self._adapters = adapters
         self._identity = identity
         self._sessions = sessions
         self._idempotency = idempotency
         self._downstream = downstream
+        self._trace = trace
 
     def process(self, channel: str, payload: dict) -> IngressResult:
         adapter = self._adapters[channel]
@@ -53,11 +56,31 @@ class IngressService:
             envelope = adapter.build_inbound(payload)
             user = self._identity.resolve(envelope.channel, envelope.channel_user_id)
             session = self._sessions.find_or_create(user.id, envelope.channel, envelope.conversation_id)
+            self._trace_event(
+                envelope.trace_id,
+                "channel",
+                {"channel": envelope.channel, "message_id": envelope.message_id, "duplicate": True},
+            )
             return IngressResult(envelope=envelope, user=user, session=session, duplicate=True)
 
         envelope = adapter.build_inbound(payload)
         user = self._identity.resolve(envelope.channel, envelope.channel_user_id)
         session = self._sessions.find_or_create(user.id, envelope.channel, envelope.conversation_id)
+
+        self._trace_event(
+            envelope.trace_id,
+            "channel",
+            {"channel": envelope.channel, "message_id": envelope.message_id, "text": envelope.text},
+        )
+        self._trace_event(
+            envelope.trace_id,
+            "identity",
+            {
+                "channel_identity": f"{envelope.channel}/{envelope.channel_user_id}",
+                "user_id": user.id,
+                "session_id": session.id,
+            },
+        )
 
         downstream_result = None
         if self._downstream is not None:
@@ -72,3 +95,7 @@ class IngressService:
             duplicate=False,
             downstream=downstream_result,
         )
+
+    def _trace_event(self, trace_id: str, stage: str, payload: dict) -> None:
+        if self._trace is not None:
+            self._trace.event(trace_id, stage, payload)

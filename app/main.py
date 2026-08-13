@@ -39,6 +39,7 @@ from app.infrastructure.repositories import (
     TicketStore,
     UserRepository,
 )
+from app.infrastructure.trace import TraceLogger
 
 _SEED_DIR = Path(__file__).resolve().parent.parent / "seed" / "faq"
 
@@ -50,6 +51,7 @@ class OpsServices:
     tickets: TicketService
     approvals: ApprovalService
     memory: MemoryService
+    trace: TraceLogger
 
 
 def build_memory(conn: Any, store: TicketStore) -> MemoryService:
@@ -57,12 +59,20 @@ def build_memory(conn: Any, store: TicketStore) -> MemoryService:
 
 
 def build_ops(conn: Any, store: TicketStore) -> OpsServices:
-    """Assemble operator + approval + memory services on the same DB connection."""
+    """Assemble operator + approval + memory + trace services on one DB connection."""
     return OpsServices(
         tickets=TicketService(store),
         approvals=ApprovalService(store, ApprovalRepository(conn)),
         memory=build_memory(conn, store),
+        trace=TraceLogger(conn),
     )
+
+
+def _op_trace_id() -> str:
+    """Fresh trace id for operator/approval actions (no inbound envelope)."""
+    from app.domain.envelope import new_id
+
+    return new_id("trace_")
 
 
 def build_workflow(
@@ -81,6 +91,7 @@ def build_workflow(
         agent=SupportAgent(llm=llm),
         messages=MessageRepository(conn),
         memory=build_memory(conn, store),
+        trace=TraceLogger(conn),
     )
 
 
@@ -103,6 +114,7 @@ def build_ingress(
         sessions=SessionService(sessions),
         idempotency=IdempotencyStore(conn),
         downstream=downstream or build_workflow(conn, store, seed_dir=seed_dir, llm=llm).handle,
+        trace=TraceLogger(conn),
     ), conn, store
 
 
@@ -202,7 +214,12 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
         (AC-09): stable facts are stored for next-session recall."""
         try:
             result = _ops().tickets.close(ticket_id, payload)
-            _ops().memory.remember(ticket_id)
+            memories = _ops().memory.remember(ticket_id)
+            _ops().trace.event(
+                _op_trace_id(),
+                "memory_extract",
+                {"ticket_id": ticket_id, "facts": [m.fact for m in memories]},
+            )
             return result
         except InvalidStateTransition as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -218,12 +235,18 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
         """
         try:
             body = payload or {}
-            return _ops().approvals.escalate(
+            approval = _ops().approvals.escalate(
                 ticket_id,
                 action=str(body.get("action") or "escalate"),
                 requested_by=str(body.get("requested_by") or "operator"),
                 reason=body.get("reason"),
             )
+            _ops().trace.event(
+                _op_trace_id(),
+                "approval",
+                {"approval_id": approval.id, "ticket_id": ticket_id, "action": approval.action, "status": approval.status.value},
+            )
+            return approval
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -248,9 +271,15 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
     def approve(approval_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
-            return _ops().approvals.approve(
+            result = _ops().approvals.approve(
                 approval_id, decided_by=str(body.get("decided_by") or "approver")
             )
+            _ops().trace.event(
+                _op_trace_id(),
+                "approval",
+                {"approval_id": approval_id, "status": result.status.value, "decided_by": result.decided_by},
+            )
+            return result
         except InvalidApprovalDecision as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
@@ -260,15 +289,33 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
     def reject(approval_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
-            return _ops().approvals.reject(
+            result = _ops().approvals.reject(
                 approval_id,
                 decided_by=str(body.get("decided_by") or "approver"),
                 reason=body.get("reason"),
             )
+            _ops().trace.event(
+                _op_trace_id(),
+                "approval",
+                {"approval_id": approval_id, "status": result.status.value, "decided_by": result.decided_by},
+            )
+            return result
         except InvalidApprovalDecision as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get("/traces/{trace_id}")
+    def get_trace(trace_id: str) -> Any:
+        """Inspect the full journey of one message: channel -> identity ->
+        intent -> retrieval/ticket -> agent/memory -> reply."""
+        events = _ops().trace.get(trace_id)
+        if not events:
+            raise HTTPException(status_code=404, detail=f"trace not found: {trace_id}")
+        return {
+            "trace_id": trace_id,
+            "stages": [{"stage": e.stage, "payload": e.payload, "created_at": e.created_at} for e in events],
+        }
 
     return app
 
