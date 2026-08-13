@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-Phase 1 — 领域基础(Domain Foundation):核心领域实体、状态机与仓储层已就绪,含事务性 Ticket+TicketEvent 写入。尚无业务逻辑。
+Phase 2 — 身份与工单核心(Identity + Ticket Core):`IdentityResolver`(渠道身份 → 规范用户)、`TicketResolver`(显式单号 → 会话单号 → 活跃单 → 澄清)、`TicketService` 已就绪,AC-05 跨渠道续单与 AC-06 多单澄清已由测试覆盖。
 
 ## 快速开始
 
