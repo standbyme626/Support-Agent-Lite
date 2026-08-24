@@ -77,6 +77,19 @@ def test_ac26_feishu_official_idempotency_prefers_message_id() -> None:
     assert "evt" not in key and "5e3702a8" not in key
 
 
+def test_feishu_group_mention_placeholder_stripped() -> None:
+    """Group @bot text arrives as '@_user_1 ...' — placeholders must not
+    pollute ticket titles or command parsing."""
+    import copy
+
+    adapter = FeishuAdapter()
+    event = copy.deepcopy(OFFICIAL_FEISHU_EVENT)
+    event["event"]["message"]["content"] = '{"text":"@_user_1 A3 空调坏了"}'
+    inbound = adapter.handle_http("POST", {}, json.dumps(event).encode())
+    env = adapter.build_inbound(inbound.payload)
+    assert env.text == "A3 空调坏了"
+
+
 def test_ac26_feishu_url_verification_challenge() -> None:
     adapter = FeishuAdapter(verification_token="test-token")
     payload = {"type": "url_verification", "challenge": "ajls384kdjx98XX", "token": "test-token"}

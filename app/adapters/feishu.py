@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 from typing import Any
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -22,6 +23,8 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from app.adapters.base import ChannelAdapterError, HttpInbound, VerificationError
 from app.domain.envelope import InboundEnvelope
 from app.domain.outbound import ChannelCapability
+
+_MENTION_RE = re.compile(r"@_user_\d+|@_all\b")
 
 
 class FeishuAdapter:
@@ -146,17 +149,19 @@ class FeishuAdapter:
     @staticmethod
     def _extract_text(message: dict[str, Any], payload: dict[str, Any]) -> str:
         text = str(payload.get("text") or payload.get("Content") or "")
-        if text:
-            return text
-        raw = message.get("text")
-        if isinstance(raw, str) and raw:
-            return raw
-        content = message.get("content")
-        if isinstance(content, str) and content:
-            try:
-                parsed = json.loads(content)
-                if isinstance(parsed, dict):
-                    return str(parsed.get("text") or "")
-            except ValueError:
-                return content
-        return ""
+        if not text:
+            raw = message.get("text")
+            if isinstance(raw, str) and raw:
+                text = raw
+            else:
+                content = message.get("content")
+                if isinstance(content, str) and content:
+                    try:
+                        parsed = json.loads(content)
+                        if isinstance(parsed, dict):
+                            text = str(parsed.get("text") or "")
+                    except ValueError:
+                        text = content
+        # Group @-mentions arrive as @_user_N placeholders; they carry no
+        # business meaning and must not pollute ticket titles / commands.
+        return _MENTION_RE.sub("", text).strip()
