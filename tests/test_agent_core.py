@@ -500,7 +500,7 @@ def test_ac15_private_detail_first_contact(app_ctx) -> None:
     notifications = app_ctx.client.get("/tickets/T0001/case").json()["notifications"]
     private = [n for n in notifications if n["type"] == "PRIVATE_DETAIL"]
     assert len(private) == 1
-    assert private[0]["message"].startswith("工单：T0001")
+    assert private[0]["message"].startswith("工单 T0001 已受理：")
     sent = [r for r in app_ctx.transport.records if r.method == "POST"]
     assert any(b and b.get("touser") == "zhangsan" for b in [r.body for r in sent if "message/send" in r.url])
     # honest receipt: no fabricated "已私发给你"
