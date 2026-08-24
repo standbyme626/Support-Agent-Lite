@@ -649,10 +649,20 @@ class SupportWorkflow:
         if self._actions is None:
             return
         priority = "P2" if decision.priority_suggestion == "high" else "P3"
-        private_detail = (
-            f"工单：{ticket.id}\n问题：{ticket.title}\n状态：{ticket.status.value}\n"
-            f"优先级：{priority}\n摘要：{decision.summary}"
-        )
+        status_hint = "待维修人员认领" if ticket.status.value == "OPEN" else f"当前{ticket.status.value}"
+        # Legacy-adapted (reference/scripts/wecom_bridge_server.py:889): the
+        # private DM carries the real detailed explanation, not a bare form.
+        parts = [
+            f"工单 {ticket.id} 已受理：{ticket.title}",
+            f"状态：{ticket.status.value}（{status_hint}）；优先级：{priority}",
+        ]
+        analysis = decision.understanding or decision.summary
+        if analysis:
+            parts.append(f"\n情况分析：{analysis}")
+        if decision.missing_information:
+            parts.append("为加快处理，请补充：" + "、".join(decision.missing_information))
+        parts.append("\n进展会同步给你；你也可以直接在这里补充信息。")
+        private_detail = "\n".join(parts)
         self._actions.requester_acknowledgement(
             ticket,
             user.id,

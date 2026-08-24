@@ -53,7 +53,9 @@ def test_ac11_private_detail_delivered_to_dm(app_ctx) -> None:
     notifications = outbox_for(app_ctx, "T0001")
     private = [n for n in notifications if n["type"] == "PRIVATE_DETAIL"]
     assert len(private) == 1
-    assert "工单：T0001" in private[0]["message"]
+    assert "工单：T0001" in private[0]["message"] or "工单 T0001" in private[0]["message"]
+    # DM carries a natural explanation (legacy-adapted), not a bare form
+    assert "情况分析" in private[0]["message"]
 
     # delivered via wecom message/send (touser), not appchat
     sent = [r for r in app_ctx.transport.records if r.method == "POST"]
