@@ -107,7 +107,14 @@ class TicketResolver:
 
         if session_ticket_id:
             ticket = self._store.get(session_ticket_id)
-            if ticket is not None and ticket.user_id == user_id:
+            # Session context may only CONTINUE an open case; a CLOSED ticket
+            # must fall through to the user-centric active lookup (otherwise a
+            # new report gets recorded onto a finished ticket).
+            if (
+                ticket is not None
+                and ticket.user_id == user_id
+                and ticket.status is not TicketStatus.CLOSED
+            ):
                 return TicketResolution(kind=ResolutionKind.SESSION, ticket=ticket)
 
         active = self._service.active_tickets(user_id)

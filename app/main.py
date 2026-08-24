@@ -10,6 +10,26 @@ from typing import Any, Callable
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+
+def _load_env_file() -> None:
+    """Minimal .env loader (no external dependency).
+
+    setdefault semantics: real environment variables always win over the
+    file. Tests stay offline because conftest explicitly assigns
+    REAL_CHANNEL_NETWORK=false before importing this module.
+    """
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_env_file()
+
 from app.adapters.base import ChannelAdapterError, HttpInbound
 from app.adapters.feishu import FeishuAdapter
 from app.adapters.outbound import FeishuConfig, FeishuOutboundClient, WeComConfig, WeComOutboundClient

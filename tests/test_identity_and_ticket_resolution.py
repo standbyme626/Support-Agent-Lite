@@ -165,6 +165,20 @@ def test_resolution_session_ticket_when_multiple_active(ctx) -> None:
     assert resolution.ticket.id == t1.id
 
 
+def test_resolution_session_context_ignores_closed_ticket(ctx) -> None:
+    """A stale session ticket context pointing at a CLOSED ticket must NOT
+    swallow a new support request (regression: real-Feishu report was
+    recorded onto the closed T0001)."""
+    user = seed_user(ctx, "wecom", "zhangsan", "张三")
+    old = ctx["ticket_service"].create(user.id, "A3 空调坏了", "不制冷")
+    ctx["ticket_service"].claim(old.id)
+    ctx["ticket_service"].resolve(old.id)
+    ctx["ticket_service"].close(old.id)
+
+    resolution = ctx["resolver"].resolve("空调又坏了", user.id, session_ticket_id=old.id)
+    assert resolution.kind == ResolutionKind.CREATE_NEW
+
+
 def test_resolution_foreign_ticket_ignored(ctx) -> None:
     user_a = seed_user(ctx, "wecom", "zhangsan", "张三")
     user_b = seed_user(ctx, "feishu", "ou_002", "李四")

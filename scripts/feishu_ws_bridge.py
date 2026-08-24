@@ -63,9 +63,14 @@ def main() -> None:
         except Exception as exc:  # keep the ws loop alive no matter what
             print(f"[bridge] ERROR handling event: {exc!r}", flush=True)
 
+    def on_ignored_event(data: lark.CustomizedEvent) -> None:
+        pass  # message read receipts / p2p chat entered: subscribed but unused
+
     event_handler = (
         lark.EventDispatcherHandler.builder("", "")
         .register_p2_im_message_receive_v1(on_message_receive)
+        .register_p1_customized_event("im.message.message_read_v1", on_ignored_event)
+        .register_p1_customized_event("im.chat.access_event.bot_p2p_chat_entered_v1", on_ignored_event)
         .build()
     )
 
