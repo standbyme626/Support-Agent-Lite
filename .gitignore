@@ -25,3 +25,6 @@ opencode.json
 .beads/
 .claude/
 .vscode/
+# datasets (raw data, downloaded from HuggingFace)
+/datasets/*
+!/datasets/README.md
