@@ -112,3 +112,50 @@ def test_tickets_scoped_by_user(conn, users) -> None:
     store.create(Ticket(id="T1002", user_id="user_002", title="b", description="d"))
 
     assert [t.id for t in store.list_by_user("user_001")] == ["T1001"]
+
+
+def test_seed_reload_corrects_drifted_conversation(conn, tmp_path) -> None:
+    """A conversation registered with a wrong purpose before the seed file
+    was fixed must be reconciled by the next seed load (seed is
+    authoritative for type/purpose/queue/location/enabled)."""
+    import json
+
+    from app.application.conversation_service import ConversationService
+    from app.domain.conversation import ConversationPurpose
+    from app.infrastructure.repositories import ConversationRepository
+
+    repo = ConversationRepository(conn)
+    service = ConversationService(repo)
+    service.register(
+        channel="feishu",
+        channel_conversation_id="oc_correctme",
+        conversation_type="GROUP",
+        purpose="REQUESTER",  # wrong on purpose
+        location="维修群(上报)",
+    )
+
+    seed_dir = tmp_path / "seed"
+    seed_dir.mkdir()
+    (seed_dir / "conversations.json").write_text(
+        json.dumps(
+            [
+                {
+                    "channel": "feishu",
+                    "channel_conversation_id": "oc_correctme",
+                    "conversation_type": "GROUP",
+                    "purpose": "OPERATOR",  # corrected truth
+                    "queue": "facility",
+                    "location": "工单群(处理)",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    ConversationService(repo, seed_dir)
+
+    fixed = repo.find("feishu", "oc_correctme")
+    assert fixed is not None
+    assert fixed.purpose == ConversationPurpose.OPERATOR
+    assert fixed.location == "工单群(处理)"
+    assert fixed.queue == "facility"

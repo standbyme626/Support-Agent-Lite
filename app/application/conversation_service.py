@@ -33,7 +33,7 @@ class ConversationService:
             payload = json.loads(file.read_text(encoding="utf-8"))
             for raw in payload:
                 try:
-                    self.register(
+                    kwargs = dict(
                         channel=str(raw["channel"]),
                         channel_conversation_id=str(raw["channel_conversation_id"]),
                         conversation_type=ConversationType(raw.get("conversation_type", "GROUP")),
@@ -44,6 +44,34 @@ class ConversationService:
                     )
                 except KeyError:
                     continue
+                existing = self._repo.find(kwargs["channel"], kwargs["channel_conversation_id"])
+                if existing is not None:
+                    # Seed is authoritative for configured fields; correct drift
+                    # (e.g. a purpose registered wrong before the seed was fixed).
+                    if (
+                        existing.conversation_type,
+                        existing.purpose,
+                        existing.queue,
+                        existing.location,
+                        existing.enabled,
+                    ) != (
+                        kwargs["conversation_type"],
+                        kwargs["purpose"],
+                        kwargs["queue"],
+                        kwargs["location"],
+                        kwargs["enabled"],
+                    ):
+                        self._repo.update_config(
+                            kwargs["channel"],
+                            kwargs["channel_conversation_id"],
+                            conversation_type=kwargs["conversation_type"],
+                            purpose=kwargs["purpose"],
+                            queue=kwargs["queue"],
+                            location=kwargs["location"],
+                            enabled=kwargs["enabled"],
+                        )
+                    continue
+                self.register(**kwargs)
 
     def register(
         self,

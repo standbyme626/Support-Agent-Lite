@@ -647,6 +647,34 @@ class ConversationRepository(SqliteRepository):
         ).fetchone()
         return self._row(row) if row else None
 
+    def update_config(
+        self,
+        channel: str,
+        channel_conversation_id: str,
+        *,
+        conversation_type: ConversationType,
+        purpose: ConversationPurpose,
+        queue: str | None,
+        location: str | None,
+        enabled: bool,
+    ) -> Conversation | None:
+        """Reconcile an existing conversation's configured fields (seed is
+        authoritative for type/purpose/queue/location/enabled)."""
+        self._conn.execute(
+            "UPDATE conversations SET conversation_type = ?, purpose = ?, queue = ?, location = ?, enabled = ? "
+            "WHERE channel = ? AND channel_conversation_id = ?",
+            (
+                conversation_type.value,
+                purpose.value,
+                queue,
+                location,
+                1 if enabled else 0,
+                channel,
+                channel_conversation_id,
+            ),
+        )
+        return self.find(channel, channel_conversation_id)
+
     def list_by_purpose(self, purpose: ConversationPurpose) -> list[Conversation]:
         rows = self._conn.execute(
             "SELECT * FROM conversations WHERE purpose = ? AND enabled = 1 ORDER BY created_at",
