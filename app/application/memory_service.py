@@ -61,7 +61,13 @@ class MemoryService:
         top_k: int = 3,
         min_score: float = 0.20,
     ) -> list[RecallHit]:
-        """Match a new message against the user's stored facts."""
+        """Match a new message against the user's stored facts.
+
+        Ranking (V2.1, Option A): effective = relevance_score × confidence,
+        so `Memory.confidence` is a real ranking input — a lower-confidence
+        fact never outranks a same-relevance higher-confidence one, and the
+        field is no longer a decorative value.
+        """
         terms = tokenize(text)
         if not terms:
             return []
@@ -69,7 +75,8 @@ class MemoryService:
         for memory in self._memories.list_by_user(user_id):
             score = self._score(terms, memory.fact)
             if score >= min_score and self._matched_count(terms, memory.fact) >= 1:
-                hits.append(RecallHit(memory=memory, score=score))
+                effective = score * self._confidence_factor(memory.confidence)
+                hits.append(RecallHit(memory=memory, score=effective))
         hits.sort(key=lambda hit: hit.score, reverse=True)
         return hits[:top_k]
 
@@ -84,6 +91,12 @@ class MemoryService:
         if matched == 0:
             return 0.0
         return matched / len(terms)
+
+    @staticmethod
+    def _confidence_factor(confidence: float) -> float:
+        """0.5..1.0 scale: keeps the ranking honest while still letting
+        confidence separate ties (score × factor)."""
+        return 0.5 + 0.5 * max(0.0, min(1.0, confidence))
 
     @staticmethod
     def _matched_count(terms: set[str], fact: str) -> int:

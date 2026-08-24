@@ -654,14 +654,31 @@ class ConversationRepository(SqliteRepository):
         ).fetchall()
         return [self._row(r) for r in rows]
 
-    def find_operator_conversation(self, queue: str | None) -> Conversation | None:
-        """Primary operator conversation for a queue (falls back to any
-        operator conversation)."""
+    def find_operator_conversation(self, queue: str | None, channel: str | None = None) -> Conversation | None:
+        """Primary operator conversation for a queue. Prefers the same
+        channel when given, then any queue match, then any operator
+        conversation."""
         if queue:
+            if channel:
+                row = self._conn.execute(
+                    "SELECT * FROM conversations WHERE purpose = 'OPERATOR' AND queue = ? "
+                    "AND channel = ? AND enabled = 1 ORDER BY created_at LIMIT 1",
+                    (queue, channel),
+                ).fetchone()
+                if row:
+                    return self._row(row)
             row = self._conn.execute(
                 "SELECT * FROM conversations WHERE purpose = 'OPERATOR' AND queue = ? AND enabled = 1 "
                 "ORDER BY created_at LIMIT 1",
                 (queue,),
+            ).fetchone()
+            if row:
+                return self._row(row)
+        if channel:
+            row = self._conn.execute(
+                "SELECT * FROM conversations WHERE purpose = 'OPERATOR' AND channel = ? AND enabled = 1 "
+                "ORDER BY created_at LIMIT 1",
+                (channel,),
             ).fetchone()
             if row:
                 return self._row(row)
@@ -670,6 +687,36 @@ class ConversationRepository(SqliteRepository):
             "ORDER BY created_at LIMIT 1"
         ).fetchone()
         return self._row(row) if row else None
+
+    def find_requester_conversation(self, queue: str | None, channel: str | None = None) -> Conversation | None:
+        """Requester-facing (public) conversation. Prefers same channel and
+        queue; used when a ticket is created outside a requester
+        conversation (e.g. from an operator group)."""
+        if queue:
+            if channel:
+                row = self._conn.execute(
+                    "SELECT * FROM conversations WHERE purpose = 'REQUESTER' AND queue = ? "
+                    "AND channel = ? AND enabled = 1 ORDER BY created_at LIMIT 1",
+                    (queue, channel),
+                ).fetchone()
+                if row:
+                    return self._row(row)
+            row = self._conn.execute(
+                "SELECT * FROM conversations WHERE purpose = 'REQUESTER' AND queue = ? AND enabled = 1 "
+                "ORDER BY created_at LIMIT 1",
+                (queue,),
+            ).fetchone()
+            if row:
+                return self._row(row)
+        if channel:
+            row = self._conn.execute(
+                "SELECT * FROM conversations WHERE purpose = 'REQUESTER' AND channel = ? AND enabled = 1 "
+                "ORDER BY created_at LIMIT 1",
+                (channel,),
+            ).fetchone()
+            if row:
+                return self._row(row)
+        return None
 
     def find_approval_conversation(self) -> Conversation | None:
         row = self._conn.execute(
@@ -881,6 +928,24 @@ class NotificationOutboxRepository(SqliteRepository):
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (_eid(), outbox_id, attempt_number, 1 if success else 0, result_code, error, _ts()),
         )
+
+    def attempts(self, outbox_id: str) -> list[dict]:
+        """Delivery attempt history for one outbox record (case trace)."""
+        rows = self._conn.execute(
+            "SELECT attempt_number, success, result_code, error, created_at "
+            "FROM delivery_attempts WHERE outbox_id = ? ORDER BY attempt_number",
+            (outbox_id,),
+        ).fetchall()
+        return [
+            {
+                "attempt_number": r["attempt_number"],
+                "success": bool(r["success"]),
+                "result_code": r["result_code"],
+                "error": r["error"],
+                "created_at": r["created_at"],
+            }
+            for r in rows
+        ]
 
     @staticmethod
     def _row(row: sqlite3.Row) -> NotificationRecord:

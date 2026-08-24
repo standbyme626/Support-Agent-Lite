@@ -1,10 +1,12 @@
-"""Phase 4 tests: ContextBuilder (AC-07) + SupportAgent (invariant #4)."""
+"""V2.1 agent tests: ContextBuilder (AC-07) + SupportAgent (invariant #4,
+full perception AC-A01, fallback AC-A08/A-A13).
+"""
 import pytest
 
 from app.application.context_builder import ContextBuilder
 from app.application.identity_service import IdentityResolver
 from app.application.session_service import SessionService
-from app.application.support_agent import SupportAgent
+from app.application.support_agent import INTENT_SUPPORT, SupportAgent
 from app.application.ticket_service import TicketService
 from app.domain.envelope import InboundEnvelope
 from app.infrastructure.db import apply_migrations, connect
@@ -15,6 +17,7 @@ from app.infrastructure.repositories import (
     TicketStore,
     UserRepository,
 )
+from tests.fake_llm import BrokenLLM, RecordingLLM, make_decision
 
 
 @pytest.fixture()
@@ -93,16 +96,23 @@ def test_agent_analysis_outputs_advice_only(ctx) -> None:
     builder = ContextBuilder(ctx["messages"])
     context = builder.build(envelope("空调坏了，很紧急"), ctx["user"], ctx["session"], ticket)
 
-    analysis = SupportAgent().analyze(context)
+    run = SupportAgent().run(context)
 
-    assert analysis.category == "device"
-    assert analysis.priority_suggestion == "high"
-    assert analysis.recommended_action == "dispatch_repair"
-    assert "工单" in analysis.summary and ticket.id in analysis.summary
-    assert "A3 空调坏了" in analysis.reply_draft
+    decision = run.decision
+    assert decision.category == "device"
+    assert decision.priority_suggestion == "high"
+    assert decision.recommended_action == "dispatch_repair"
+    assert "工单" in decision.summary and ticket.id in decision.summary
+    assert "A3 空调坏了" in decision.reply_draft
     stored = ctx["store"].get(ticket.id)
     assert stored is not None and stored.status == status_before  # untouched
     assert ctx["store"].events(ticket.id) and ctx["store"].events(ticket.id)[0].event_type.value == "created"
+    # deterministic fallback path (no LLM)
+    assert run.fallback_used is True
+    assert run.fallback_reason == "no_llm"
+    assert run.prompt_key == "agent_decision"
+    assert run.prompt_version == "v1"
+    assert run.model == "none"
 
 
 def test_agent_category_and_priority_rules(ctx) -> None:
@@ -121,24 +131,134 @@ def test_agent_category_and_priority_rules(ctx) -> None:
 
 
 def test_agent_llm_polish_with_fallback(ctx) -> None:
-    class FakeLLM:
-        def complete(self, *, system: str, user: str, temperature: float = 0.2) -> str:  # noqa: ARG002
-            return '{"summary": "LLM摘要", "reply_draft": "LLM回复草稿"}'
-
+    """AC-A01 + AC-A08: valid LLM output is schema-validated and used;
+    the prompt contains the full perception (recent messages, role,
+    purpose, ticket state, memories, knowledge)."""
+    fake = RecordingLLM(
+        reply=make_decision(
+            summary="LLM摘要",
+            reply="LLM回复草稿",
+            category="network",
+            priority="high",
+            action="network_triage",
+            memory_refs=[],
+            knowledge_refs=[],
+        )
+    )
     builder = ContextBuilder(ctx["messages"])
-    context = builder.build(envelope("空调坏了"), ctx["user"], ctx["session"], None)
-    analysis = SupportAgent(llm=FakeLLM()).analyze(context)
-    assert analysis.summary == "LLM摘要"
-    assert analysis.reply_draft == "LLM回复草稿"
+    context = builder.build(
+        envelope("空调坏了"),
+        ctx["user"],
+        ctx["session"],
+        None,
+        conversation_type="GROUP",
+        conversation_purpose="REQUESTER",
+        actor_role="requester",
+    )
+    run = SupportAgent(llm=fake).run(context)
+
+    decision = run.decision
+    assert decision.summary == "LLM摘要"
+    assert decision.reply_draft == "LLM回复草稿"
+    assert decision.category == "network"
+    assert decision.priority_suggestion == "high"
+    assert run.fallback_used is False
+    assert run.model == "recording-test-model"
+
+    # AC-A01: the model really sees the perception, not just the message
+    prompt = fake.last_prompt()
+    assert "空调坏了" in prompt
+    assert "REQUESTER" in prompt
+    assert "GROUP" in prompt
+    assert "requester" in prompt
+    assert "无相关记忆" in prompt or "（无）" in prompt
+    assert "<user_message>" in prompt  # untrusted-content delimiter
 
 
 def test_agent_llm_failure_falls_back_to_rules(ctx) -> None:
-    class BrokenLLM:
-        def complete(self, *, system: str, user: str, temperature: float = 0.2) -> str:  # noqa: ARG002
-            raise RuntimeError("llm down")
+    """AC-A13: LLM unavailable -> deterministic fallback, no exception."""
+    builder = ContextBuilder(ctx["messages"])
+    context = builder.build(envelope("空调坏了"), ctx["user"], ctx["session"], None)
+    run = SupportAgent(llm=BrokenLLM()).run(context)
+    assert "空调坏了" in run.decision.summary
+    assert run.decision.reply_draft  # deterministic fallback reply
+    assert run.fallback_used is True
+    assert run.fallback_reason == "llm_error:RuntimeError"
+
+
+def test_agent_llm_timeout_falls_back(ctx) -> None:
+    """AC-A13: timeout -> deterministic fallback."""
+    from tests.fake_llm import TimeoutLLM
 
     builder = ContextBuilder(ctx["messages"])
     context = builder.build(envelope("空调坏了"), ctx["user"], ctx["session"], None)
-    analysis = SupportAgent(llm=BrokenLLM()).analyze(context)
-    assert "空调坏了" in analysis.summary
-    assert analysis.reply_draft  # deterministic fallback reply
+    run = SupportAgent(llm=TimeoutLLM()).run(context)
+    assert run.fallback_used is True
+    assert run.fallback_reason == "llm_error:TimeoutError"
+    assert run.error_type == "TimeoutError"
+    assert "空调坏了" in run.decision.summary
+
+
+def test_agent_malformed_output_falls_back(ctx) -> None:
+    """AC-A08: plain text / empty / bad JSON -> fallback, never a crash."""
+    from tests.fake_llm import MalformedLLM
+
+    builder = ContextBuilder(ctx["messages"])
+    context = builder.build(envelope("空调坏了"), ctx["user"], ctx["session"], None)
+    for payload in ("", "抱歉我无法回答", '{"summary": "只有摘要"}', "[]"):
+        run = SupportAgent(llm=MalformedLLM(payload)).run(context)
+        assert run.fallback_used is True
+        assert "空调坏了" in run.decision.summary
+
+
+def test_agent_invalid_enum_falls_back(ctx) -> None:
+    """AC-A08: unknown category/action/priority -> fallback."""
+    from tests.fake_llm import MalformedLLM
+
+    builder = ContextBuilder(ctx["messages"])
+    context = builder.build(envelope("空调坏了"), ctx["user"], ctx["session"], None)
+    bad = make_decision(category="alien", action="hack_ticket", priority="urgent")
+    run = SupportAgent(llm=MalformedLLM(bad)).run(context)
+    assert run.fallback_used is True
+    assert "invalid_decision" in run.fallback_reason
+
+
+def test_agent_oversized_reply_falls_back(ctx) -> None:
+    """AC-A08: oversized reply is rejected (bounded output)."""
+    from tests.fake_llm import MalformedLLM
+
+    builder = ContextBuilder(ctx["messages"])
+    context = builder.build(envelope("空调坏了"), ctx["user"], ctx["session"], None)
+    big = make_decision(reply="长" * 500)
+    run = SupportAgent(llm=MalformedLLM(big)).run(context)
+    assert run.fallback_used is True
+    assert "reply-too-long" in run.fallback_reason
+
+
+def test_agent_refs_are_validated_against_context(ctx) -> None:
+    """AC-A04/A-A05: hallucinated memory/knowledge refs are dropped."""
+    from app.application.retriever import Retriever
+    from app.domain.memory import Memory, MemoryKind
+    from pathlib import Path
+
+    memory = Memory(
+        id="mem_real",
+        user_id=ctx["user"].id,
+        ticket_id="T0001",
+        kind=MemoryKind.STABLE_FACT,
+        fact="A3 空调控制板故障已更换",
+        confidence=0.9,
+    )
+    builder = ContextBuilder(ctx["messages"])
+    context = builder.build(
+        envelope("A3 空调又不制冷了"),
+        ctx["user"],
+        ctx["session"],
+        None,
+        recalled_memories=[memory],
+        knowledge_evidence=[],
+    )
+    fake = RecordingLLM(reply=make_decision(memory_refs=["mem_real", "mem_hallucinated"], knowledge_refs=["faq_ghost"]))
+    decision = SupportAgent(llm=fake).run(context).decision
+    assert decision.memory_refs == ["mem_real"]  # hallucinated ref dropped
+    assert decision.knowledge_refs == []

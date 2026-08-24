@@ -23,9 +23,18 @@
   },
   {
     "channel": "feishu",
-    "channel_conversation_id": "oc_op_facility",
+    "channel_conversation_id": "oc_54cd200a81624e7f6ea0a68c2a9eb03f",
     "conversation_type": "GROUP",
     "purpose": "OPERATOR",
-    "queue": "facility"
+    "queue": "facility",
+    "location": "工单群(处理)"
+  },
+  {
+    "channel": "feishu",
+    "channel_conversation_id": "oc_979f6435ef8071bc533ea6123889d712",
+    "conversation_type": "GROUP",
+    "purpose": "REQUESTER",
+    "queue": "facility",
+    "location": "维修群(上报)"
   }
 ]

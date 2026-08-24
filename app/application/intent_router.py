@@ -1,21 +1,23 @@
-"""IntentRouter: intent classification for inbound messages.
+"""IntentRouter: deterministic intent pre-routing.
 
-Rules first, optional LLM fallback for low-confidence cases.
+Pure keyword rules, no randomness: the same message always routes the
+same way. V2.1 removed the LLM fallback (`llm_classify_fn`) — semantic
+understanding is owned by the SupportAgent, and running two competing
+LLM routing layers would create contradictory intent signals. Obvious
+deterministic routing stays here; everything below threshold routes to
+"other" and the agent/continuation logic handles it.
 
-Intents (Phase 4 contract):
+Intents:
 
-    faq             knowledge question -> RAG answer, NO ticket
+    faq             knowledge question -> RAG evidence -> agent
     support         issue / repair request -> TicketResolver -> Ticket
     progress_query  status inquiry about existing tickets
     other           cannot be classified by rules
-
-ADAPT from legacy `reference/core/intent_router.py`. Pure rules, no
-randomness: the same message always routes the same way.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, ClassVar
+from typing import ClassVar
 
 VALID_INTENTS = frozenset({"faq", "support", "progress_query", "other"})
 
@@ -29,7 +31,7 @@ class IntentDecision:
 
 
 class IntentRouter:
-    """Hybrid intent router: keyword rules first, LLM fallback below threshold."""
+    """Deterministic keyword intent router (no LLM fallback, V2.1)."""
 
     _intent_keywords: ClassVar[dict[str, frozenset[str]]] = {
         "faq": frozenset({
@@ -60,13 +62,8 @@ class IntentRouter:
 
     _threshold = 0.58
 
-    def __init__(
-        self,
-        threshold: float = 0.58,
-        llm_classify_fn: Callable[[str], tuple[str, float]] | None = None,
-    ) -> None:
+    def __init__(self, threshold: float = 0.58) -> None:
         self._threshold = threshold
-        self._llm_classify_fn = llm_classify_fn
 
     def route(self, message: str) -> IntentDecision:
         normalized = message.strip().lower()
@@ -86,10 +83,6 @@ class IntentRouter:
 
         confidence = round(min(1.0, best_score), 3)
         if confidence < self._threshold:
-            if self._llm_classify_fn is not None:
-                llm_intent, llm_conf = self._llm_classify_fn(message)
-                if llm_intent in VALID_INTENTS and llm_conf >= self._threshold:
-                    return IntentDecision(llm_intent, round(llm_conf, 3), False, "llm-classify")
             return IntentDecision("other", confidence, True, f"below-threshold:{self._threshold}")
 
         return IntentDecision(best_intent, confidence, False, "keyword-match")

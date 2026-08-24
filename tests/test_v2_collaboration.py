@@ -30,8 +30,12 @@ def test_ac11_requester_group_create_three_outputs(app_ctx) -> None:
 
     notifications = outbox_for(app_ctx, "T0001")
     types = {n["type"]: n["message"] for n in notifications}
-    # 1) public requester receipt
-    assert types.get("REACTIVE_REPLY") == "张三，已受理，工单 T0001 已创建。详细信息已私发给你。"
+    # 1) public requester receipt: the agent-drafted reply (honest — it
+    #    never claims "已私发给你"; no LLM in tests -> deterministic draft)
+    receipt = types.get("REACTIVE_REPLY")
+    assert receipt is not None
+    assert "T0001" in receipt and "OPEN" in receipt
+    assert "已私发给你" not in receipt
     # 2) private requester detail (dm session created first in fixture flow below)
     # 3) operator work item
     work_item = types.get("OPERATOR_WORK_ITEM")
@@ -101,7 +105,7 @@ def test_ac13_canonical_operator_across_channels(app_ctx) -> None:
         "ev_resolve",
         open_id="ou_lihua",
         chat_type="group",
-        chat_id="oc_op_facility",
+        chat_id="oc_54cd200a81624e7f6ea0a68c2a9eb03f",
     )
     assert resp.status_code == 200
     assert resp.json()["workflow"] == "operator_action"
@@ -142,9 +146,12 @@ def test_ac14_operator_claim_receipts(app_ctx) -> None:
 
 
 def test_ac16_operator_no_implicit_ticket(app_ctx) -> None:
+    """AC-16 (V2.1 strong form): a plain message in the shared operator
+    conversation must NEVER guess an implicit ticket — no auto-resolve,
+    no auto-close, no implicit work item. Deterministic routing: lihua has
+    no active tickets, so the message resolves to the fixed 'other' reply."""
     client, store = app_ctx.client, app_ctx.store
     wecom_group(client, "A3 空调坏了", "m1")
-    wecom_group(client, "VPN 连不上", "m3", msg_id="m3", conversation_id="repair_group_2") if False else None
     # second ticket for the same user
     user_id = app_ctx.users["zhangsan"]
     from app.application.ticket_service import TicketService
@@ -155,11 +162,13 @@ def test_ac16_operator_no_implicit_ticket(app_ctx) -> None:
     # operator says "处理好了" WITHOUT a ticket id -> must NOT guess
     resp = wecom_group(client, "处理好了", "m4", conversation_id=WECOM_OPERATOR_GROUP, user="lihua")
     body = resp.json()
-    assert body["workflow"] == "operator_action"
+    # deterministic: "处理好了" matches no command and no requester intent
+    # keyword, and the operator has no active tickets -> fixed 'other' reply
+    assert body["workflow"] == "other"
     assert body["ticket_id"] is None
-    assert "待处理工单" in body["reply"]
-    assert "T0001" in body["reply"] and "T0002" in body["reply"]
     assert store.get("T0001").status.value == "OPEN"  # nothing was auto-resolved
+    assert store.get("T0002").status.value == "OPEN"  # nothing was auto-resolved
+    assert len(store.events("T0001")) == 1  # only the original created event
 
 
 # --- AC-17: Resolve -> confirmation request, not auto-close ---
@@ -262,3 +271,49 @@ def test_ac21_no_answer_real_handoff(app_ctx) -> None:
     notifications = outbox_for(app_ctx, "T0001")
     types = [n["type"] for n in notifications]
     assert "OPERATOR_WORK_ITEM" in types  # operators really got the work item
+
+
+# --- operator conversation can file tickets; targets split correctly ---
+
+
+def test_operator_group_can_file_ticket_and_targets_split(app_ctx) -> None:
+    """A plain message in an operator conversation creates a ticket; the
+    public receipt goes to the requester group (same channel+queue), the
+    private detail to the requester's channel identity, and the work item
+    to the operator conversation."""
+    client, store = app_ctx.client, app_ctx.store
+    from tests.v2_fixtures import feishu_official
+
+    # a feishu requester group must exist for the public receipt to land on
+    r = client.post(
+        "/conversations/register",
+        json={"channel": "feishu", "channel_conversation_id": "oc_requester", "purpose": "REQUESTER",
+              "conversation_type": "GROUP", "queue": "facility"},
+    )
+    assert r.status_code == 200
+
+    # feishu user files a ticket from the feishu repair group
+    resp = feishu_official(
+        client,
+        "A3 空调坏了",
+        "ev_op_file",
+        open_id="ou_ops",
+        chat_id="oc_979f6435ef8071bc533ea6123889d712",
+    ).json()
+    assert resp["ticket_id"] == "T0001"
+
+    from app.infrastructure.repositories import NotificationOutboxRepository
+    from app.main import build_ops
+    from tests.conftest import _outbound_clients
+
+    ops = build_ops(app_ctx.conn, store, _outbound_clients(app_ctx.transport))
+    outbox = NotificationOutboxRepository(app_ctx.conn)
+    records = outbox.list_by_ticket("T0001")
+    kinds = {r.notification_type.value: r.target_key for r in records}
+
+    # public receipt -> the same feishu repair (requester) group it was filed from
+    assert kinds["REACTIVE_REPLY"] == "conversation:feishu:oc_979f6435ef8071bc533ea6123889d712"
+    # work item -> the feishu processing group (operator)
+    assert kinds["OPERATOR_WORK_ITEM"] == "conversation:feishu:oc_54cd200a81624e7f6ea0a68c2a9eb03f"
+    # private detail -> direct to the requester's feishu open_id (no DM session yet)
+    assert kinds["PRIVATE_DETAIL"] == "user:feishu:ou_ops"

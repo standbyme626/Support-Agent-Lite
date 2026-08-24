@@ -89,10 +89,12 @@ class RealHttpTransport:
         params: dict[str, str] | None = None,
         json: dict[str, Any] | str | None = None,
     ) -> dict[str, Any]:
+        import json as _json
+
         self.records.append(
             RecordedRequest(url=url, method="POST", headers=dict(headers or {}), params=dict(params or {}), body=json)
         )
-        body = json.dumps(json, ensure_ascii=False) if isinstance(json, dict) else (json or "")
+        body = _json.dumps(json, ensure_ascii=False) if isinstance(json, dict) else (json or "")
         resp = self._client.post(url, headers=headers, params=params, content=body)
         return resp.json()
 

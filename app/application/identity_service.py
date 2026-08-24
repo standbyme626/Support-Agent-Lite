@@ -26,6 +26,14 @@ class IdentityResolver:
         self._users = users
         self._identities = identities
 
+    def find(self, channel: str, channel_user_id: str) -> User | None:
+        """Resolve an EXISTING channel identity to its canonical user,
+        without creating anything (used by the REST trust boundary)."""
+        existing = self._identities.find(channel, channel_user_id)
+        if existing is None:
+            return None
+        return self._users.get(existing.user_id)
+
     def resolve(self, channel: str, channel_user_id: str, display_name: str | None = None) -> User:
         existing = self._identities.find(channel, channel_user_id)
         if existing is not None:

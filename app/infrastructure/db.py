@@ -16,6 +16,47 @@ from typing import Any
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent.parent / "storage" / "migrations"
 
 
+class SerializedCursor:
+    """Cursor wrapper: row fetching stays inside the connection lock.
+
+    sqlite3 cursors step lazily — `execute()` only fetches the first row,
+    and `fetchall()`/`fetchone()`/iteration step the rest. If those later
+    steps ran OUTSIDE the serialization lock, another thread's transaction
+    could interleave with an in-flight read statement on the shared
+    connection (torn rows / 'cannot start a transaction within a
+    transaction'). All data access therefore holds the lock.
+    """
+
+    def __init__(self, conn: "SerializedConnection", cursor: sqlite3.Cursor) -> None:
+        self._conn = conn
+        self._cursor = cursor
+
+    def fetchall(self):
+        with self._conn._txn_lock:  # noqa: SLF001
+            return self._cursor.fetchall()
+
+    def fetchone(self):
+        with self._conn._txn_lock:  # noqa: SLF001
+            return self._cursor.fetchone()
+
+    def __iter__(self):
+        with self._conn._txn_lock:  # noqa: SLF001
+            return iter(self._cursor.fetchall())
+
+    def close(self) -> None:
+        with self._conn._txn_lock:  # noqa: SLF001
+            self._cursor.close()
+
+    def __enter__(self) -> "SerializedCursor":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
+
 class SerializedConnection:
     """sqlite3.Connection wrapper: every statement passes one global lock."""
 
@@ -23,9 +64,9 @@ class SerializedConnection:
         self._conn = conn
         self._txn_lock = lock
 
-    def execute(self, sql: str, parameters: Any = ()) -> sqlite3.Cursor:
+    def execute(self, sql: str, parameters: Any = ()) -> SerializedCursor:
         with self._txn_lock:
-            return self._conn.execute(sql, parameters)
+            return SerializedCursor(self, self._conn.execute(sql, parameters))
 
     def executemany(self, sql: str, seq_of_parameters: Any) -> sqlite3.Cursor:
         with self._txn_lock:

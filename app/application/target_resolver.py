@@ -31,8 +31,20 @@ class TargetResolver:
         self._sessions = sessions
         self._identities = identities
 
-    def requester_public(self, ticket: Ticket) -> ResolvedTarget:
-        """The requester conversation where the ticket was created."""
+    def requester_public(self, ticket: Ticket, channel: str | None = None) -> ResolvedTarget:
+        """The requester-facing public conversation for this ticket.
+
+        Prefers a requester conversation on the ticket's queue/channel
+        (so a ticket created in an operator group still broadcasts to the
+        requester group); falls back to the conversation where the ticket
+        was created.
+        """
+        preferred = self._conversations.find_requester_conversation(ticket.queue, channel or None)
+        if preferred is not None and preferred.enabled:
+            return ResolvedTarget(
+                DeliveryTarget(preferred.channel, TargetKind.CONVERSATION, preferred.channel_conversation_id),
+                f"requester_public:{preferred.id}",
+            )
         if not ticket.source_conversation_id:
             return ResolvedTarget(None, "no_source_conversation")
         conversation = self._conversations.find_by_channel_conversation_id(ticket.source_conversation_id)
@@ -45,15 +57,17 @@ class TargetResolver:
             f"requester_public:{conversation.id}",
         )
 
-    def requester_private(self, ticket: Ticket, requester_user_id: str) -> ResolvedTarget:
-        """The requester's DM conversation on the ticket's source channel.
+    def requester_private(self, ticket: Ticket, requester_user_id: str, channel: str | None = None) -> ResolvedTarget:
+        """The requester's private DM.
 
-        DM notifications are delivered to the channel USER identity
-        (open_id / userid), not to a chat id: wecom message/send uses
-        touser, feishu send uses receive_id_type=open_id for p2p.
+        Delivered to the channel USER identity (open_id / userid), not a
+        chat id: wecom message/send uses touser, feishu send uses
+        receive_id_type=open_id for p2p. If no DM conversation exists yet,
+        falls back to direct delivery to the requester's channel identity
+        (feishu apps can open a p2p chat with a user by open_id).
         """
         source = self._conversations.find_by_channel_conversation_id(ticket.source_conversation_id)
-        channel = source.channel if source else "wecom"
+        channel = channel or (source.channel if source else "wecom")
         sessions = self._sessions.list_by_user(requester_user_id)
         for session in sessions:
             if session.channel != channel:
@@ -67,6 +81,9 @@ class TargetResolver:
                     DeliveryTarget(channel, TargetKind.USER, target_id),
                     f"requester_dm:{session.id}",
                 )
+        target_id = self._channel_user_id(channel, requester_user_id)
+        if target_id is not None:
+            return ResolvedTarget(DeliveryTarget(channel, TargetKind.USER, target_id), "requester_dm:direct_open_id")
         return ResolvedTarget(None, "no_requester_dm_conversation")
 
     def _channel_user_id(self, channel: str, user_id: str) -> str | None:
@@ -75,8 +92,8 @@ class TargetResolver:
         identity = self._identities.find_by_user_on_channel(channel, user_id)
         return identity.channel_user_id if identity else None
 
-    def operator_queue(self, queue: str | None) -> ResolvedTarget:
-        conversation = self._conversations.find_operator_conversation(queue)
+    def operator_queue(self, queue: str | None, channel: str | None = None) -> ResolvedTarget:
+        conversation = self._conversations.find_operator_conversation(queue, channel)
         if conversation is None:
             return ResolvedTarget(None, "no_operator_conversation")
         return ResolvedTarget(

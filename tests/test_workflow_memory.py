@@ -1,12 +1,18 @@
-"""Phase 6 end-to-end: AC-09 (close -> memory) and AC-10 (next-session recall)."""
+"""Phase 6 end-to-end: AC-09 (close -> memory) and AC-10 (next-session recall).
+
+V2.1: closures happen via requester confirmation or the approved
+FORCE_CLOSE pipeline (the unapproved direct-close backdoor is removed).
+"""
 from fastapi.testclient import TestClient
 
 from app.main import build_ingress, build_ops, create_app
+from tests.v2_fixtures import APPROVER_ACTOR, OPERATOR_ACTOR, seed_control_plane
 
 
 def _client():
     ingress, conn, store = build_ingress(db_path=":memory:")
     ops = build_ops(conn, store)
+    seed_control_plane(conn)
     return TestClient(create_app(ingress, ops)), store
 
 
@@ -24,12 +30,14 @@ def _wecom(client, content, msg_id, conversation_id="conv_1"):
 
 
 def _close_full_lifecycle(client, note: str = "已更换空调滤网") -> str:
-    """Create + claim + resolve + close a ticket via webhook/operator API.
+    """Create + claim + resolve + approved force-close a ticket.
     Returns the canonical user_id."""
     user_id = _wecom(client, "A3 空调坏了", "m1").json()["user_id"]
-    assert client.post("/tickets/T0001/claim").status_code == 200
-    assert client.post("/tickets/T0001/resolve", json={"note": note}).status_code == 200
-    assert client.post("/tickets/T0001/close").status_code == 200
+    assert client.post("/tickets/T0001/claim", json=OPERATOR_ACTOR).status_code == 200
+    assert client.post("/tickets/T0001/resolve", json={**OPERATOR_ACTOR, "note": note}).status_code == 200
+    closed = client.post("/tickets/T0001/close", json={**OPERATOR_ACTOR, "reason": "归档"})
+    assert closed.status_code == 200
+    assert client.post(f"/approvals/{closed.json()['id']}/approve", json=APPROVER_ACTOR).status_code == 200
     return user_id
 
 
@@ -68,8 +76,8 @@ def test_ac09_memory_kind_filter() -> None:
 def test_ac09_unclosed_ticket_has_no_memory() -> None:
     client, _ = _client()
     user_id = _wecom(client, "VPN 连不上", "m1").json()["user_id"]
-    client.post("/tickets/T0001/claim")
-    client.post("/tickets/T0001/resolve")
+    client.post("/tickets/T0001/claim", json=OPERATOR_ACTOR)
+    client.post("/tickets/T0001/resolve", json=OPERATOR_ACTOR)
 
     resp = client.get(f"/memories?user_id={user_id}")
     assert resp.json() == []  # memory only after CLOSED

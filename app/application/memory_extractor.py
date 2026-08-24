@@ -1,9 +1,11 @@
 """MemoryExtractor: CLOSED ticket -> stable facts + final summary.
 
-AC-09. Deterministic rules first (conservative: facts are derived only
-from ticket fields and events, never invented), optional LLM polish.
-Extraction happens AFTER a ticket reaches CLOSED; open tickets must not
-produce memory (nothing is stable yet).
+AC-09. Deterministic rules only: facts are derived exclusively from
+ticket fields and events, never invented, never LLM-polished (the
+declared-but-unused `llm` parameter was removed in V2.1 — a credible,
+deterministic closed-case extraction is the contract; optional LLM
+polish is not claimed). Extraction happens AFTER a ticket reaches
+CLOSED; open tickets must not produce memory (nothing is stable yet).
 """
 from __future__ import annotations
 
@@ -11,7 +13,6 @@ from dataclasses import dataclass
 
 from app.domain.memory import Memory, MemoryKind
 from app.domain.ticket import Ticket, TicketEvent, TicketStatus
-from app.infrastructure.llm import LLMClient
 
 _CATEGORY_LABELS: dict[str, tuple[str, ...]] = {
     "设备问题": ("空调", "电脑", "打印机", "显示器", "硬件", "设备", "开机", "蓝屏"),
@@ -32,9 +33,6 @@ class ExtractionResult:
 
 class MemoryExtractor:
     """Extracts stable facts from a closed ticket and its history."""
-
-    def __init__(self, llm: LLMClient | None = None) -> None:
-        self._llm = llm
 
     def extract(
         self,

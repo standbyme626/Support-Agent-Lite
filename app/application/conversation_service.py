@@ -50,12 +50,16 @@ class ConversationService:
         *,
         channel: str,
         channel_conversation_id: str,
-        conversation_type: ConversationType,
-        purpose: ConversationPurpose,
+        conversation_type: ConversationType | str,
+        purpose: ConversationPurpose | str,
         queue: str | None = None,
         location: str | None = None,
         enabled: bool = True,
     ) -> Conversation:
+        if isinstance(conversation_type, str):
+            conversation_type = ConversationType(conversation_type.upper())
+        if isinstance(purpose, str):
+            purpose = ConversationPurpose(purpose.upper())
         existing = self._repo.find(channel, channel_conversation_id)
         if existing is not None:
             return existing

@@ -1,5 +1,15 @@
-"""Pytest fixtures for V2 acceptance tests."""
+"""Pytest fixtures for V2 acceptance tests.
+
+Hermeticity (V2.1, AC-A18): the default test run must NEVER touch the
+real network, even when the shell/.env exports REAL_CHANNEL_NETWORK=true.
+Real-network tests must opt in explicitly with RUN_REAL_CHANNEL_TESTS=1.
+"""
 from __future__ import annotations
+
+import os
+
+if not os.environ.get("RUN_REAL_CHANNEL_TESTS"):
+    os.environ["REAL_CHANNEL_NETWORK"] = "false"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -24,12 +34,17 @@ WECOM_APPROVAL_ROOM = "approval_room"
 
 
 class AppCtx:
-    def __init__(self, client, conn, store, transport, users) -> None:
+    def __init__(self, client, conn, store, transport, users, ingress=None) -> None:
         self.client = client
         self.conn = conn
         self.store = store
         self.transport = transport
         self.users = users  # {name: user_id}
+        self.ingress = ingress  # IngressService (for agent/LLM injection in tests)
+
+    def with_llm(self, llm) -> None:
+        """Swap the workflow agent's LLM (deterministic fake LLMs only)."""
+        self.ingress._workflow._agent._llm = llm  # noqa: SLF001
 
 
 def _outbound_clients(transport: HttpTransport) -> dict:
@@ -76,5 +91,5 @@ def app_ctx() -> AppCtx:
         "lihua": li.id,
         "manager": manager.id,
     }
-    yield AppCtx(client, conn, store, transport, users)
+    yield AppCtx(client, conn, store, transport, users, ingress)
     conn.close()

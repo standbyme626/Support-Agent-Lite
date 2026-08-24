@@ -1,4 +1,9 @@
-"""Phase 4 tests: IntentRouter (rules-first, deterministic)."""
+"""Phase 4 tests: IntentRouter (deterministic pre-routing only).
+
+V2.1: the LLM classification fallback (`llm_classify_fn`) was removed —
+semantic understanding belongs to the SupportAgent; two competing LLM
+routing layers would produce contradictory intent signals.
+"""
 from app.application.intent_router import IntentRouter
 
 
@@ -60,23 +65,11 @@ def test_deterministic_same_message_same_intent() -> None:
     assert router.route("A3 空调坏了") == router.route("A3 空调坏了")
 
 
-def test_llm_fallback_hook_used_when_below_threshold() -> None:
-    calls = []
+def test_low_confidence_routes_to_other_deterministically() -> None:
+    """Below-threshold text stays 'other' — no LLM fallback (removed in
+    V2.1); the workflow's continuation/agent logic owns interpretation."""
+    decision = route("我感觉不太对劲")
+    assert decision.intent == "other"
+    assert decision.is_low_confidence is True
+    assert decision.reason.startswith("below-threshold")
 
-    def fake_llm(text: str) -> tuple[str, float]:
-        calls.append(text)
-        return "support", 0.9
-
-    router = IntentRouter(llm_classify_fn=fake_llm)
-    decision = router.route("我感觉不太对劲")
-    assert decision.intent == "support"
-    assert decision.reason == "llm-classify"
-    assert calls == ["我感觉不太对劲"]
-
-
-def test_llm_fallback_ignored_when_rule_matches() -> None:
-    def fake_llm(text: str) -> tuple[str, float]:  # noqa: ARG001
-        return "faq", 0.9
-
-    router = IntentRouter(llm_classify_fn=fake_llm)
-    assert router.route("A3 空调坏了").intent == "support"

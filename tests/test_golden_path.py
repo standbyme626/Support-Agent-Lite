@@ -8,11 +8,13 @@ from fastapi.testclient import TestClient
 from app.application.identity_service import IdentityResolver
 from app.infrastructure.repositories import ChannelIdentityRepository, UserRepository
 from app.main import build_ingress, build_ops, create_app
+from tests.v2_fixtures import APPROVER_ACTOR, OPERATOR_ACTOR, seed_control_plane
 
 
 def _client():
     ingress, conn, store = build_ingress(db_path=":memory:")
     ops = build_ops(conn, store)
+    seed_control_plane(conn)
     return TestClient(create_app(ingress, ops)), store
 
 
@@ -98,7 +100,7 @@ def test_ac04_operator_claim() -> None:
     client, store = _client()
     _wecom(client, "A3 空调坏了", "m1")
 
-    resp = client.post("/tickets/T0001/claim")
+    resp = client.post("/tickets/T0001/claim", json=OPERATOR_ACTOR)
     assert resp.status_code == 200
     assert resp.json()["status"] == "IN_PROGRESS"
     assert [e.event_type.value for e in store.events("T0001")] == ["created", "claimed"]
@@ -173,15 +175,15 @@ def test_ac07_agent_summary_context() -> None:
 def test_ac08_hitl_approval() -> None:
     client, store = _client()
     _wecom(client, "A3 空调坏了", "m1")
-    client.post("/tickets/T0001/claim")
+    client.post("/tickets/T0001/claim", json=OPERATOR_ACTOR)
 
-    escalated = client.post("/tickets/T0001/escalate", json={"reason": "用户要求升级"})
+    escalated = client.post("/tickets/T0001/escalate", json={**OPERATOR_ACTOR, "reason": "用户要求升级"})
     assert escalated.status_code == 200
     approval = escalated.json()
     assert approval["status"] == "PENDING"
     assert store.get("T0001").status.value == "IN_PROGRESS"  # ticket remains valid
 
-    approved = client.post(f"/approvals/{approval['id']}/approve", json={"decided_by": "manager"})
+    approved = client.post(f"/approvals/{approval['id']}/approve", json=APPROVER_ACTOR)
     assert approved.status_code == 200
     assert approved.json()["status"] == "APPROVED"
     assert store.get("T0001").status.value == "IN_PROGRESS"  # still valid after approve
@@ -190,15 +192,23 @@ def test_ac08_hitl_approval() -> None:
     assert [e.event_type.value for e in store.events("T0001")] == ["created", "claimed", "escalated"]
 
 
-# --- AC-09 Close -> Memory ---
+# --- AC-09 Close -> Memory (V2.1: approved force close, no direct-close backdoor) ---
+
+
+def _force_close(client, reason: str = "处理完成归档") -> None:
+    closed = client.post("/tickets/T0001/close", json={**OPERATOR_ACTOR, "reason": reason})
+    assert closed.status_code == 200
+    approval_id = closed.json()["id"]
+    approved = client.post(f"/approvals/{approval_id}/approve", json=APPROVER_ACTOR)
+    assert approved.status_code == 200
 
 
 def test_ac09_close_to_memory() -> None:
     client, store = _client()
     user_id = _wecom(client, "A3 空调坏了", "m1").json()["user_id"]
-    client.post("/tickets/T0001/claim")
-    client.post("/tickets/T0001/resolve", json={"note": "已更换空调滤网"})
-    client.post("/tickets/T0001/close")
+    client.post("/tickets/T0001/claim", json=OPERATOR_ACTOR)
+    client.post("/tickets/T0001/resolve", json={**OPERATOR_ACTOR, "note": "已更换空调滤网"})
+    _force_close(client)
 
     memories = client.get(f"/memories?user_id={user_id}").json()
     facts = [m["fact"] for m in memories]
@@ -207,15 +217,12 @@ def test_ac09_close_to_memory() -> None:
     assert any("已处理完成" in f for f in facts)
 
 
-# --- AC-10 New Session Recall ---
-
-
 def test_ac10_new_session_recall() -> None:
     client, store = _client()
     _wecom(client, "A3 空调坏了", "m1")
-    client.post("/tickets/T0001/claim")
-    client.post("/tickets/T0001/resolve", json={"note": "已更换空调滤网"})
-    client.post("/tickets/T0001/close")
+    client.post("/tickets/T0001/claim", json=OPERATOR_ACTOR)
+    client.post("/tickets/T0001/resolve", json={**OPERATOR_ACTOR, "note": "已更换空调滤网"})
+    _force_close(client)
 
     resp = _wecom(client, "空调又坏了", "m10", conversation_id="conv_new")
     body = resp.json()
@@ -261,9 +268,9 @@ def test_trace_covers_full_journey() -> None:
 
     # memory_recall trace on the recall path (requires a closed ticket first)
     _wecom(client, "A3 空调坏了", "m2b", conversation_id="conv_lifecycle")
-    client.post("/tickets/T0001/claim")
-    client.post("/tickets/T0001/resolve", json={"note": "已更换空调滤网"})
-    client.post("/tickets/T0001/close")
+    client.post("/tickets/T0001/claim", json=OPERATOR_ACTOR)
+    client.post("/tickets/T0001/resolve", json={**OPERATOR_ACTOR, "note": "已更换空调滤网"})
+    _force_close(client)
     recall = _wecom(client, "空调又坏了", "m3", conversation_id="conv_recall").json()
     recall_trace = client.get(f"/traces/{recall['trace_id']}").json()
     stages_recall = [s["stage"] for s in recall_trace["stages"]]

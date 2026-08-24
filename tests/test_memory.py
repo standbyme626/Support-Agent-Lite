@@ -146,6 +146,39 @@ def test_list_memories_by_kind(ctx) -> None:
     assert len(summaries) == 1
 
 
+def test_recall_ranking_consumes_confidence(ctx) -> None:
+    """§17 Option A: `Memory.confidence` is a REAL ranking input.
+
+    Two facts with identical relevance (same terms matched) must rank by
+    confidence: a high-confidence fact outranks a low-confidence one, so
+    the field is not a decorative value that retrieval ignores.
+    """
+    from app.domain.memory import Memory
+
+    memories = MemoryRepository(ctx["conn"])
+    for i, (fact, confidence, memory_id) in enumerate(
+        (
+            ("A3 空调控制板故障", 0.95, "mem_high"),
+            ("A3 空调控制板故障", 0.20, "mem_low"),
+        )
+    ):
+        ticket = ctx["tickets"].create(ctx["user"].id, f"故障工单 {i}", fact)
+        memories.add(
+            Memory(
+                id=memory_id,
+                user_id=ctx["user"].id,
+                ticket_id=ticket.id,
+                kind=MemoryKind.STABLE_FACT,
+                fact=fact,
+                confidence=confidence,
+            )
+        )
+
+    hits = ctx["memory"].recall(ctx["user"].id, "空调故障", top_k=2)
+    assert [h.memory.id for h in hits] == ["mem_high", "mem_low"]
+    assert hits[0].score > hits[1].score  # effective = relevance × confidence factor
+
+
 # --- quality gate: extraction Precision >= 85% ---
 
 # Labeled cases: (title, resolution_note, expected stable facts)

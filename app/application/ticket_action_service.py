@@ -96,30 +96,10 @@ class TicketActionService:
         with txn(self._conn):
             stored = self._store.create(ticket, trace_id=trace_id, conversation_id=conversation.channel_conversation_id)
             event_id = f"{stored.id}:created:{trace_id}"
-            public = self._targets.requester_public(stored)
-            private = self._targets.requester_private(stored, requester_user_id)
-            operator = self._targets.operator_queue(stored.queue)
-            self._notifications.enqueue(
-                source_event_id=event_id,
-                notification_type=NotificationType.REACTIVE_REPLY,
-                visibility=Visibility.PUBLIC,
-                message=f"{requester_name}，已受理，工单 {stored.id} 已创建。详细信息已私发给你。",
-                target=public,
-                ticket_id=stored.id,
-                trace_id=trace_id,
-            )
-            self._notifications.enqueue(
-                source_event_id=event_id,
-                notification_type=NotificationType.PRIVATE_DETAIL,
-                visibility=Visibility.PRIVATE,
-                message=(
-                    f"工单：{stored.id}\n问题：{stored.title}\n状态：OPEN\n"
-                    f"优先级：P3\n（来源：{source}）"
-                ),
-                target=private,
-                ticket_id=stored.id,
-                trace_id=trace_id,
-            )
+            operator = self._targets.operator_queue(stored.queue, channel=conversation.channel)
+            # Phase A enqueues only the deterministic operator work item.
+            # The requester-facing receipt/detail (agent-drafted, honest)
+            # is enqueued in phase B via requester_acknowledgement().
             self._notifications.enqueue(
                 source_event_id=event_id,
                 notification_type=NotificationType.OPERATOR_WORK_ITEM,
@@ -136,6 +116,90 @@ class TicketActionService:
                 trace_id=trace_id,
             )
         return stored
+
+    def requester_acknowledgement(
+        self,
+        ticket: Ticket,
+        requester_user_id: str,
+        *,
+        reply: str,
+        private_detail: str,
+        source_event_id: str,
+        trace_id: str,
+        channel: str,
+    ) -> None:
+        """Phase-B requester-facing notifications (V2.1 honest receipt).
+
+        The PUBLIC receipt is the agent-drafted reply (it never claims
+        "私发给你" — the agent prompt forbids claiming unproven states).
+        PRIVATE_DETAIL is enqueued ONLY when a private target actually
+        resolves (H7: no more silent drop + lying receipt).
+        """
+        with txn(self._conn):
+            public = self._targets.requester_public(ticket, channel=channel)
+            private = self._targets.requester_private(ticket, requester_user_id, channel=channel)
+            self._notifications.enqueue(
+                source_event_id=source_event_id,
+                notification_type=NotificationType.REACTIVE_REPLY,
+                visibility=Visibility.PUBLIC,
+                message=reply,
+                target=public,
+                ticket_id=ticket.id,
+                trace_id=trace_id,
+            )
+            if private.delivery is not None:
+                self._notifications.enqueue(
+                    source_event_id=source_event_id,
+                    notification_type=NotificationType.PRIVATE_DETAIL,
+                    visibility=Visibility.PRIVATE,
+                    message=private_detail,
+                    target=private,
+                    ticket_id=ticket.id,
+                    trace_id=trace_id,
+                )
+
+    def conversation_reply(
+        self,
+        *,
+        channel: str,
+        conversation_id: str,
+        text: str,
+        trace_id: str,
+        source_event_id: str,
+    ) -> None:
+        """Phase-B reply delivery for the no-ticket FAQ path."""
+        with txn(self._conn):
+            target = self._targets.by_conversation(channel, conversation_id)
+            self._notifications.enqueue(
+                source_event_id=source_event_id,
+                notification_type=NotificationType.REACTIVE_REPLY,
+                visibility=Visibility.PUBLIC,
+                message=text,
+                target=target,
+                trace_id=trace_id,
+            )
+
+    def operator_update_note(
+        self,
+        ticket: Ticket,
+        *,
+        note: str,
+        source_event_id: str,
+        trace_id: str,
+        channel: str,
+    ) -> None:
+        """Phase-B operator-side update (continuation/priority changes)."""
+        with txn(self._conn):
+            operator = self._targets.operator_queue(ticket.queue, channel=channel)
+            self._notifications.enqueue(
+                source_event_id=source_event_id,
+                notification_type=NotificationType.INTERNAL_NOTE,
+                visibility=Visibility.INTERNAL,
+                message=note,
+                target=operator,
+                ticket_id=ticket.id,
+                trace_id=trace_id,
+            )
 
     # --- operator actions ---
 
@@ -159,8 +223,8 @@ class TicketActionService:
             )
             event_id = f"{ticket_id}:claimed:{trace_id}"
             origin = self._origin(channel, conversation_id)
-            public = self._targets.requester_public(ticket)
-            private = self._targets.requester_private(ticket, ticket.user_id)
+            public = self._targets.requester_public(ticket, channel=channel)
+            private = self._targets.requester_private(ticket, ticket.user_id, channel=channel)
             self._notifications.enqueue(
                 source_event_id=event_id,
                 notification_type=NotificationType.OPERATOR_ACTION_RECEIPT,
@@ -218,8 +282,8 @@ class TicketActionService:
                     summary=f"{base}\n处理结果：{note}"[:600],
                 )
             origin = self._origin(channel, conversation_id)
-            public = self._targets.requester_public(ticket)
-            private = self._targets.requester_private(ticket, ticket.user_id)
+            public = self._targets.requester_public(ticket, channel=channel)
+            private = self._targets.requester_private(ticket, ticket.user_id, channel=channel)
             requester_name = self._user_name(ticket.user_id)
             self._notifications.enqueue(
                 source_event_id=event_id,
@@ -273,9 +337,9 @@ class TicketActionService:
             memories = self._memory.remember(ticket_id)
             self._trace_memory_extract(trace_id, ticket_id, memories)
             event_id = f"{ticket_id}:closed:{trace_id}"
-            public = self._targets.requester_public(ticket)
-            private = self._targets.requester_private(ticket, requester_user_id)
-            operator = self._targets.operator_queue(ticket.queue)
+            public = self._targets.requester_public(ticket, channel=channel)
+            private = self._targets.requester_private(ticket, requester_user_id, channel=channel)
+            operator = self._targets.operator_queue(ticket.queue, channel=channel)
             requester_name = self._user_name(requester_user_id)
             self._notifications.enqueue(
                 source_event_id=event_id,
@@ -327,7 +391,7 @@ class TicketActionService:
             )
             event_id = f"{ticket_id}:rejected:{trace_id}"
             public = self._targets.requester_public(ticket)
-            operator = self._targets.operator_queue(ticket.queue)
+            operator = self._targets.operator_queue(ticket.queue, channel=channel)
             requester_name = self._user_name(requester_user_id)
             self._notifications.enqueue(
                 source_event_id=event_id,
@@ -348,28 +412,6 @@ class TicketActionService:
                 trace_id=trace_id,
             )
         return ActionOutcome(ticket=ticket, reply=f"已收到，工单 {ticket_id} 会继续处理。", event_type="resolution_rejected")
-
-    def close_direct(
-        self,
-        ticket_id: str,
-        actor_user_id: str,
-        payload: dict | None,
-        *,
-        trace_id: str,
-    ) -> ActionOutcome:
-        """Legacy REST close (V1 compat): RESOLVED -> CLOSED without
-        requester confirmation. Kept for the operator REST surface; the
-        channel-facing flow uses requester_confirm / approved force_close."""
-        with txn(self._conn):
-            ticket = self._store.transition(
-                ticket_id,
-                TicketStatus.CLOSED,
-                payload,
-                actor_user_id=actor_user_id,
-                trace_id=trace_id,
-            )
-            self._trace_memory_extract(trace_id, ticket_id, self._memory.remember(ticket_id))
-        return ActionOutcome(ticket=ticket, reply=f"工单 {ticket_id} 已关闭。", event_type="closed")
 
     # --- HITL: escalate / force_close -> approval -> execution ---
 
@@ -399,6 +441,15 @@ class TicketActionService:
     ) -> ActionOutcome:
         if not reason:
             raise InvalidStateTransition("force_close requires a reason")
+        ticket = self._store.get(ticket_id)
+        if ticket is None:
+            raise KeyError(f"ticket not found: {ticket_id}")
+        # Policy: the state machine only allows IN_PROGRESS/RESOLVED -> CLOSED.
+        # An OPEN ticket can never be force-closed by any path (V2.1 closure fix).
+        if ticket.status.value not in ("IN_PROGRESS", "RESOLVED"):
+            raise InvalidStateTransition(
+                f"force_close not allowed from {ticket.status.value}"
+            )
         return self._request_approval(
             ApprovableAction.FORCE_CLOSE, ticket_id, actor_user_id, reason, trace_id, channel, conversation_id
         )
@@ -567,7 +618,7 @@ class TicketActionService:
                 conversation_id=conversation_id,
             )
             self._trace_memory_extract(trace_id, pending.ticket_id, self._memory.remember(pending.ticket_id))
-            operator = self._targets.operator_queue(ticket.queue)
+            operator = self._targets.operator_queue(ticket.queue, channel=channel)
             public = self._targets.requester_public(ticket)
             requester_name = self._user_name(ticket.user_id)
             self._notifications.enqueue(

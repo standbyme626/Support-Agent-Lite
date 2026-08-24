@@ -253,3 +253,27 @@ Verification Token / Encrypt Key + real conversation ids, set
 `REAL_CHANNEL_NETWORK=true` (swaps in `RealHttpTransport`), and configure
 the webhook callback URLs. No redesign of identity, conversation, ticket,
 notification, or workflow is required.
+
+---
+
+# Appendix — V2.1 Agent Core (summary)
+
+Full details: `docs/V2_1_AGENT_CORE_IMPLEMENTATION_REPORT.md`.
+
+| Topic | V2 (before) | V2.1 (after) |
+| --- | --- | --- |
+| Agent | deterministic workflow + keyword classify + static action map + LLM reply polish | bounded stateful reasoning: full `AgentContext` → ≤2 read-only tools → schema-validated `AgentDecision` |
+| Context | collected-but-partly-unused summary + recent | the model literally sees message/role/purpose/type/ticket/recent conversation/memory/RAG evidence (AC-A01) |
+| Output | loose fields | `AgentDecision` with enums, refs, missing-info, proposal, rationale; `validate_decision` falls back on every failure mode |
+| Proposal | — | `ActionProposal` (ESCALATE/FORCE_CLOSE) with **no business effect** until Policy + Approval |
+| Transactions | LLM inside the serialized write txn | two-phase: Transaction A (deterministic + `AGENT_PENDING`) → agent run (no write lock) → Transaction B (CAS, exactly once) |
+| Crash safety | duplicate webhook = skip (permanent half-processing) | `FAILED_RETRYABLE` / `AGENT_PENDING` resume the agent phase; no duplicate tickets/events |
+| Prompts | inline `str.format` | versioned `PromptRegistry` (missing-var / literal-brace / schema section safe) |
+| Intent/Memory LLM paths | declared-but-unwired zombies | removed (single semantic owner: the Agent) |
+| Closure | direct-close backdoor | `RESOLVED→CLOSED` only via requester confirm or approved `FORCE_CLOSE`; REST `/close` deprecated |
+| REST trust | arbitrary actor strings | canonical actor resolution + role verification |
+| Eval | FakeLLM "LLM摘要" | 14-case golden set (AC-A20) + offline fake-LLM family |
+| Offline | env-dependent | default `pytest` forced offline (`RUN_REAL_CHANNEL_TESTS=1` to opt in) |
+
+V2.1 acceptance: AC-A01 ~ AC-A20 all green; full suite **235 passed, 0
+failed** (was 179).

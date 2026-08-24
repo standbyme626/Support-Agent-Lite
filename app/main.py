@@ -15,6 +15,7 @@ from app.adapters.feishu import FeishuAdapter
 from app.adapters.outbound import FeishuConfig, FeishuOutboundClient, WeComConfig, WeComOutboundClient
 from app.adapters.wecom import WeComAdapter
 from app.application.approval_service import ApprovalService
+from app.application.agent_tools import AgentToolPort
 from app.application.command_parser import CommandParser
 from app.application.context_builder import ContextBuilder
 from app.application.conversation_service import ConversationService
@@ -23,6 +24,7 @@ from app.application.ingress_service import IngressService
 from app.application.intent_router import IntentRouter
 from app.application.memory_service import MemoryService
 from app.application.notification_service import NotificationService
+from app.application.policy import PolicyValidator
 from app.application.retriever import Retriever
 from app.application.role_service import RoleService
 from app.application.session_service import SessionService
@@ -36,6 +38,7 @@ from app.domain.pending_action import ApprovableAction
 from app.domain.envelope import InboundEnvelope
 from app.domain.identity import Session, User
 from app.domain.memory import MemoryKind
+from app.domain.role import UserRole
 from app.domain.ticket import AlreadyClaimed, InvalidStateTransition
 from app.infrastructure.db import apply_migrations, connect
 from app.infrastructure.idempotency import IdempotencyStore
@@ -72,6 +75,8 @@ class OpsServices:
     roles: RoleService
     conversations: ConversationService
     notifications: NotificationService
+    identity: IdentityResolver
+    users: UserRepository
 
 
 def _channel_adapters() -> dict[str, object]:
@@ -88,9 +93,10 @@ def _channel_adapters() -> dict[str, object]:
 
 
 def _outbound_clients(transport=None) -> dict[str, object]:
+    from app.adapters.outbound import transport_from_env
     from app.adapters.transports import HttpTransport
 
-    transport = transport or HttpTransport()
+    transport = transport or transport_from_env()
     return {
         "wecom": WeComOutboundClient(
             WeComConfig(
@@ -145,6 +151,8 @@ def build_core(conn: Any, store: TicketStore, outbound_clients: dict | None = No
 def build_ops(conn: Any, store: TicketStore, outbound_clients: dict | None = None) -> OpsServices:
     """Assemble operator + approval + memory + action + notification services."""
     core = build_core(conn, store, outbound_clients)
+    users = UserRepository(conn)
+    identities = ChannelIdentityRepository(conn)
     return OpsServices(
         tickets=TicketService(store),
         approvals=ApprovalService(store, ApprovalRepository(conn)),
@@ -154,6 +162,8 @@ def build_ops(conn: Any, store: TicketStore, outbound_clients: dict | None = Non
         roles=core["roles"],
         conversations=core["conversations"],
         notifications=core["notifications"],
+        identity=IdentityResolver(users, identities),
+        users=users,
     )
 
 
@@ -171,23 +181,31 @@ def build_workflow(
     llm: LLMClient | None = None,
     core: dict[str, Any] | None = None,
 ) -> SupportWorkflow:
-    """Assemble the V2 workflow (purpose routing + actions + notifications)."""
+    """Assemble the V2.1 workflow (purpose routing + bounded agent + HITL).
+
+    The agent gets a read-only tool port and the policy validator sits
+    between agent proposals and the approval pipeline.
+    """
     core = core or build_core(conn, store)
+    retriever = Retriever(seed_dir)
+    memory = build_memory(conn, store)
+    tools = AgentToolPort(store, MessageRepository(conn), retriever, memory)
     return SupportWorkflow(
         router=IntentRouter(),
-        retriever=Retriever(seed_dir),
+        retriever=retriever,
         ticket_service=TicketService(store),
         resolver=TicketResolver(TicketService(store), store),
         context_builder=ContextBuilder(MessageRepository(conn)),
-        agent=SupportAgent(llm=llm),
+        agent=SupportAgent(llm=llm, tools=tools),
         messages=MessageRepository(conn),
-        memory=build_memory(conn, store),
+        memory=memory,
         trace=TraceLogger(conn),
         conversations=core["conversations"],
         actions=core["actions"],
         roles=core["roles"],
         parser=CommandParser(),
         session_ctx=SessionTicketContextRepository(conn),
+        policy=PolicyValidator(store),
     )
 
 
@@ -198,8 +216,12 @@ def build_ingress(
     llm: LLMClient | None = None,
     outbound_clients: dict | None = None,
 ) -> tuple[IngressService, Any, TicketStore]:
-    """Assemble the ingress pipeline (adapters + identity + sessions +
-    conversations + idempotency + notifications)."""
+    """Assemble the two-phase ingress pipeline (V2.1).
+
+    The V2.1 pipeline runs the workflow in prepare/run-agent/apply phases
+    so the LLM never holds the database write lock. A legacy `downstream`
+    callable is still accepted and runs in the single-transaction mode.
+    """
     conn = connect(db_path)
     apply_migrations(conn)
     users = UserRepository(conn)
@@ -207,16 +229,20 @@ def build_ingress(
     sessions = SessionRepository(conn)
     store = TicketStore(conn)
     core = build_core(conn, store, outbound_clients)
+    if downstream is not None:
+        workflow = None
+    else:
+        workflow = build_workflow(conn, store, seed_dir=seed_dir, llm=llm, core=core)
     return IngressService(
         adapters=_channel_adapters(),  # type: ignore[arg-type]
         identity=IdentityResolver(users, identities),
         sessions=SessionService(sessions),
         idempotency=IdempotencyStore(conn),
-        downstream=downstream
-        or build_workflow(conn, store, seed_dir=seed_dir, llm=llm, core=core).handle,
+        downstream=downstream,
         trace=TraceLogger(conn),
         conversations=core["conversations"],
         notifications=core["notifications"],
+        workflow=workflow,
     ), conn, store
 
 
@@ -261,6 +287,43 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
             _ops().notifications.dispatch()
         except Exception:
             pass
+
+    def _actor(body: dict, *, role: UserRole | None, endpoint: str) -> str:
+        """REST trust boundary (V2.1): resolve + verify the canonical actor.
+
+        The control-plane API no longer trusts arbitrary actor strings.
+        Callers must name either a canonical `actor_user_id` or a channel
+        identity `{"actor": {"channel": ..., "channel_user_id": ...}}`; the
+        actor must EXIST as a canonical user and hold the required role.
+        """
+        ops = _ops()
+        actor = body.get("actor")
+        user_id: str | None = None
+        if isinstance(actor, dict):
+            channel = str(actor.get("channel") or "")
+            channel_user_id = str(actor.get("channel_user_id") or "")
+            if not channel or not channel_user_id:
+                raise HTTPException(
+                    status_code=400, detail="actor requires channel and channel_user_id"
+                )
+            user = ops.identity.find(channel, channel_user_id)
+            user_id = user.id if user else None
+        else:
+            raw = body.get("actor_user_id")
+            user_id = str(raw) if raw else None
+        if not user_id:
+            raise HTTPException(
+                status_code=401,
+                detail=f"{endpoint} requires an actor: actor_user_id or actor.channel/channel_user_id",
+            )
+        user = ops.users.get(user_id)
+        if user is None:
+            raise HTTPException(status_code=401, detail=f"unknown actor: {user_id}")
+        if role is not None and not ops.roles.has_role(user_id, role):
+            raise HTTPException(
+                status_code=403, detail=f"actor lacks required role: {role.value}"
+            )
+        return user_id
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -316,9 +379,10 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
     def claim(ticket_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
+            actor = _actor(body, role=UserRole.OPERATOR, endpoint="claim")
             outcome = _ops().actions.claim(
                 ticket_id,
-                str(body.get("actor_user_id") or "user_system"),
+                actor,
                 trace_id=_op_trace_id(),
             )
         except AlreadyClaimed as exc:
@@ -334,9 +398,10 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
     def resolve(ticket_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
+            actor = _actor(body, role=UserRole.OPERATOR, endpoint="resolve")
             outcome = _ops().actions.resolve(
                 ticket_id,
-                str(body.get("actor_user_id") or "user_system"),
+                actor,
                 body.get("note"),
                 trace_id=_op_trace_id(),
             )
@@ -349,23 +414,41 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
 
     @app.post("/tickets/{ticket_id}/close")
     def close(ticket_id: str, payload: dict | None = None) -> Any:
-        """V1-compatible direct close (RESOLVED -> CLOSED + memory)."""
+        """Legacy REST close (DEPRECATED): an unapproved direct close is no
+        longer possible (V2.1 closure fix). This endpoint now requires a
+        reason and routes through the FORCE_CLOSE approval pipeline; the
+        ticket only closes when an approver approves."""
         try:
             body = payload or {}
-            outcome = _ops().actions.close_direct(
-                ticket_id, str(body.get("actor_user_id") or "user_system"), payload, trace_id=_op_trace_id()
+            actor = _actor(body, role=UserRole.OPERATOR, endpoint="close")
+            reason = body.get("reason")
+            if not reason:
+                raise HTTPException(
+                    status_code=400,
+                    detail="close requires a reason (unapproved direct close removed); "
+                    "use /escalate-style FORCE_CLOSE approval flow",
+                )
+            outcome = _ops().actions.force_close(
+                ticket_id,
+                actor,
+                str(reason),
+                trace_id=_op_trace_id(),
             )
         except InvalidStateTransition as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         _dispatch()
-        return _ticket_response(outcome.ticket)
+        approval = _ops().approvals.get(outcome.approval_id)
+        if approval is None:
+            raise HTTPException(status_code=404, detail="approval not found")
+        return approval
 
     @app.post("/tickets/{ticket_id}/escalate")
     def escalate(ticket_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
+            actor = _actor(body, role=UserRole.OPERATOR, endpoint="escalate")
             requested_action = body.get("action")
             if requested_action and requested_action not in {a.value for a in ApprovableAction}:
                 raise HTTPException(
@@ -374,7 +457,7 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
                 )
             outcome = _ops().actions.escalate(
                 ticket_id,
-                str(body.get("requested_by") or "operator"),
+                actor,
                 body.get("reason"),
                 trace_id=_op_trace_id(),
             )
@@ -406,8 +489,9 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
     def approve(approval_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
+            actor = _actor(body, role=UserRole.APPROVER, endpoint="approve")
             outcome = _ops().actions.approve(
-                approval_id, str(body.get("decided_by") or "approver"), trace_id=_op_trace_id()
+                approval_id, actor, trace_id=_op_trace_id()
             )
         except InvalidApprovalDecision as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -423,9 +507,10 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
     def reject(approval_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
+            actor = _actor(body, role=UserRole.APPROVER, endpoint="reject")
             _ops().actions.reject(
                 approval_id,
-                str(body.get("decided_by") or "approver"),
+                actor,
                 body.get("reason"),
                 trace_id=_op_trace_id(),
             )
@@ -461,12 +546,28 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
 
     @app.get("/tickets/{ticket_id}/case")
     def get_case(ticket_id: str) -> Any:
-        """Full case view: events (with actors/traces) + notifications +
-        memory + pending actions."""
+        """Full case view (V2.1 closure): ticket + events (actors/traces) +
+        notifications with delivery attempts + approvals + pending actions +
+        memories. Approval/pending/delivery-attempt coverage is now part of
+        the trace, matching the documented "full case trace" claim."""
         store = _ops().tickets
         ticket = store.get(ticket_id)
         if ticket is None:
             raise HTTPException(status_code=404, detail=f"ticket not found: {ticket_id}")
+        outbox = _ops().notifications._outbox  # noqa: SLF001
+        approvals_repo = _ops().approvals._approvals  # noqa: SLF001
+        pending_repo = _ops().actions._pending  # noqa: SLF001
+        notifications = [
+            {
+                "type": n.notification_type.value,
+                "visibility": n.visibility.value,
+                "message": n.message,
+                "status": n.status.value,
+                "attempt_count": n.attempt_count,
+                "delivery_attempts": outbox.attempts(n.id),
+            }
+            for n in _ops().notifications.list_for_ticket(ticket_id)
+        ]
         return {
             "ticket": {
                 "id": ticket.id,
@@ -485,9 +586,28 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
                 }
                 for e in _ops().tickets._store.events(ticket_id)  # noqa: SLF001
             ],
-            "notifications": [
-                {"type": n.notification_type.value, "visibility": n.visibility.value, "message": n.message}
-                for n in _ops().notifications.list_for_ticket(ticket_id)
+            "notifications": notifications,
+            "approvals": [
+                {
+                    "id": a.id,
+                    "action": a.action,
+                    "status": a.status.value,
+                    "requested_by": a.requested_by,
+                    "reason": a.reason,
+                    "decided_by": a.decided_by,
+                    "decided_at": a.decided_at.isoformat() if a.decided_at else None,
+                }
+                for a in approvals_repo.list_by_ticket(ticket_id)
+            ],
+            "pending_actions": [
+                {
+                    "id": p.id,
+                    "action_type": p.action_type.value,
+                    "approval_id": p.approval_id,
+                    "execution_status": p.execution_status.value,
+                    "requested_by": p.requested_by,
+                }
+                for p in pending_repo.list_by_ticket(ticket_id)
             ],
             "memories": [m.fact for m in _ops().memory.list(user_id=None) if m.ticket_id == ticket_id],
         }

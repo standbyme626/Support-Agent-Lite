@@ -6,6 +6,33 @@ WECOM_OPERATOR_GROUP = "op_group_facility"
 WECOM_APPROVAL_ROOM = "approval_room"
 
 
+def seed_control_plane(conn) -> dict:
+    """Seed operator + approver canonical users for REST trust-boundary
+    tests. Returns {name: user_id} (lihua = OPERATOR, manager = APPROVER)."""
+    from app.application.identity_service import IdentityResolver
+    from app.application.role_service import RoleService
+    from app.domain.role import UserRole
+    from app.infrastructure.repositories import (
+        ChannelIdentityRepository,
+        RoleRepository,
+        UserRepository,
+    )
+
+    identity = IdentityResolver(UserRepository(conn), ChannelIdentityRepository(conn))
+    roles = RoleService(RoleRepository(conn))
+    li = identity.resolve("wecom", "lihua", "李师傅")
+    identity.bind("feishu", "ou_lihua", li.id)
+    roles.ensure_role(li.id, UserRole.OPERATOR, queue="facility")
+    manager = identity.resolve("wecom", "manager", "王经理")
+    identity.bind("feishu", "ou_manager", manager.id)
+    roles.ensure_role(manager.id, UserRole.APPROVER)
+    return {"lihua": li.id, "manager": manager.id}
+
+
+OPERATOR_ACTOR = {"actor": {"channel": "wecom", "channel_user_id": "lihua"}}
+APPROVER_ACTOR = {"actor": {"channel": "wecom", "channel_user_id": "manager"}}
+
+
 # --- message helpers ---
 
 
