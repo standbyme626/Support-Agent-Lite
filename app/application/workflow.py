@@ -61,6 +61,7 @@ _NO_ANSWER_REPLY = (
 )
 
 _OTHER_REPLY = "您的问题需要人工支持处理，我已记录下来，会尽快由专人跟进。"
+_STAFF_OTHER_REPLY = "已收到消息。如需操作工单请使用命令（如：认领 T0002 / T0002 已修复 解决）。"
 
 _OPERATOR_GUIDANCE = "共享群内操作需要显式工单号，例如：/claim T1001、/resolve T1001 说明、/escalate T1001 原因。"
 
@@ -263,7 +264,7 @@ class SupportWorkflow:
         if decision.intent == "other" and len(self._tickets.active_tickets(user.id)) == 1:
             # Unclassifiable text with exactly one active ticket: continuation (AC-12).
             return self._prepare_support(envelope, user, session, conversation)
-        return self._prepare_other(envelope, user, session)
+        return self._prepare_other(envelope, user, session, conversation)
 
     def _prepare_faq(
         self, envelope: InboundEnvelope, user: User, session: Session, conversation: Conversation
@@ -384,8 +385,23 @@ class SupportWorkflow:
         reply = self._status_line(ticket)
         return self._deterministic(envelope, user, session, WorkflowKind.PROGRESS, reply, ticket)
 
-    def _prepare_other(self, envelope: InboundEnvelope, user: User, session: Session) -> PreparedOutcome:
-        return self._deterministic(envelope, user, session, WorkflowKind.OTHER, _OTHER_REPLY)
+    def _prepare_other(
+        self, envelope: InboundEnvelope, user: User, session: Session, conversation: Conversation
+    ) -> PreparedOutcome:
+        if conversation.purpose in (ConversationPurpose.OPERATOR, ConversationPurpose.APPROVAL):
+            # AC-16: shared staff conversations never get implicit tickets;
+            # reply neutrally without claiming any follow-up.
+            return self._deterministic(envelope, user, session, WorkflowKind.OTHER, _STAFF_OTHER_REPLY)
+        # §41/AC-21 honesty: a reply that claims "专人跟进" must back a real
+        # ticket with an operator work item — never a fake handoff.
+        ticket = self._create_handoff_ticket(envelope, user, conversation)
+        self._bind_session_ticket(session, ticket)
+        self._trace_event(
+            envelope.trace_id,
+            "ticket",
+            {"resolution": "other_handoff", "ticket_id": ticket.id},
+        )
+        return self._deterministic(envelope, user, session, WorkflowKind.OTHER, _OTHER_REPLY, ticket)
 
     def _prepare_operator(
         self, envelope: InboundEnvelope, user: User, session: Session, conversation: Conversation
