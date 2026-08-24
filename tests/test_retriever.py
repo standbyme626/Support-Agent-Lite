@@ -14,7 +14,8 @@ SEED_DIR = Path(__file__).resolve().parent.parent / "seed" / "faq"
 def test_loads_faq_documents() -> None:
     retriever = Retriever(SEED_DIR)
     assert len(retriever.documents) >= 10
-    assert all(doc.source_type == "faq" for doc in retriever.documents)
+    allowed = {"faq", "troubleshooting", "sop"}
+    assert all(doc.source_type in allowed for doc in retriever.documents)
 
 
 def test_search_returns_ranked_hits() -> None:
@@ -48,11 +49,14 @@ def test_answer_returns_none_for_ambiguous_short_query() -> None:
 
 
 def test_answer_respects_min_score_threshold() -> None:
-    """The score gate is configurable: a weak hit passes only below it."""
+    """The score gate is configurable: chit-chat stays below the default
+    production gate, and lowering the gate lets weak hits through.
+    (Corpus-size independent: asserts the gate's behaviour, not exact
+    scores against a growing knowledge base.)"""
     retriever = Retriever(SEED_DIR)
-    weak_query = "今天天气怎么样"  # weak score ~0.13 on a common-term hit
-    assert retriever.answer(weak_query, min_score=0.15) is None
-    assert retriever.answer(weak_query, min_score=0.10) is not None
+    weak_query = "今天天气怎么样"
+    assert retriever.answer(weak_query) is None  # default gate 0.25
+    assert retriever.answer(weak_query, min_score=0.05) is not None
 
 
 def test_no_ticket_is_created_by_retrieval() -> None:

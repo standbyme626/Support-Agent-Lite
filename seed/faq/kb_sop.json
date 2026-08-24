@@ -1,0 +1,461 @@
+[
+  {
+    "doc_id": "sop-001",
+    "source_type": "sop",
+    "title": "报修工单SOP#001",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步维修队列，步骤4回写resolution与close_reason。SOP-001。",
+    "tags": [
+      "support",
+      "维修队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-002",
+    "source_type": "sop",
+    "title": "投诉升级SOP#002",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步值班负责人，步骤4回写resolution与close_reason。SOP-002。",
+    "tags": [
+      "complaint",
+      "值班负责人",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-003",
+    "source_type": "sop",
+    "title": "账单争议SOP#003",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步财务队列，步骤4回写resolution与close_reason。SOP-003。",
+    "tags": [
+      "billing",
+      "财务队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-004",
+    "source_type": "sop",
+    "title": "人工接管SOP#004",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步人工客服，步骤4回写resolution与close_reason。SOP-004。",
+    "tags": [
+      "handoff",
+      "人工客服",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-005",
+    "source_type": "sop",
+    "title": "服务中断SOP#005",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步oncall，步骤4回写resolution与close_reason。SOP-005。",
+    "tags": [
+      "incident",
+      "oncall",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-006",
+    "source_type": "sop",
+    "title": "权限审批SOP#006",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步内控队列，步骤4回写resolution与close_reason。SOP-006。",
+    "tags": [
+      "approval",
+      "内控队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-007",
+    "source_type": "sop",
+    "title": "报修工单SOP#007",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步维修队列，步骤4回写resolution与close_reason。SOP-007。",
+    "tags": [
+      "support",
+      "维修队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-008",
+    "source_type": "sop",
+    "title": "投诉升级SOP#008",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步值班负责人，步骤4回写resolution与close_reason。SOP-008。",
+    "tags": [
+      "complaint",
+      "值班负责人",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-009",
+    "source_type": "sop",
+    "title": "账单争议SOP#009",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步财务队列，步骤4回写resolution与close_reason。SOP-009。",
+    "tags": [
+      "billing",
+      "财务队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-010",
+    "source_type": "sop",
+    "title": "人工接管SOP#010",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步人工客服，步骤4回写resolution与close_reason。SOP-010。",
+    "tags": [
+      "handoff",
+      "人工客服",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-011",
+    "source_type": "sop",
+    "title": "服务中断SOP#011",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步oncall，步骤4回写resolution与close_reason。SOP-011。",
+    "tags": [
+      "incident",
+      "oncall",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-012",
+    "source_type": "sop",
+    "title": "权限审批SOP#012",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步内控队列，步骤4回写resolution与close_reason。SOP-012。",
+    "tags": [
+      "approval",
+      "内控队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-013",
+    "source_type": "sop",
+    "title": "报修工单SOP#013",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步维修队列，步骤4回写resolution与close_reason。SOP-013。",
+    "tags": [
+      "support",
+      "维修队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-014",
+    "source_type": "sop",
+    "title": "投诉升级SOP#014",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步值班负责人，步骤4回写resolution与close_reason。SOP-014。",
+    "tags": [
+      "complaint",
+      "值班负责人",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-015",
+    "source_type": "sop",
+    "title": "账单争议SOP#015",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步财务队列，步骤4回写resolution与close_reason。SOP-015。",
+    "tags": [
+      "billing",
+      "财务队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-016",
+    "source_type": "sop",
+    "title": "人工接管SOP#016",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步人工客服，步骤4回写resolution与close_reason。SOP-016。",
+    "tags": [
+      "handoff",
+      "人工客服",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-017",
+    "source_type": "sop",
+    "title": "服务中断SOP#017",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步oncall，步骤4回写resolution与close_reason。SOP-017。",
+    "tags": [
+      "incident",
+      "oncall",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-018",
+    "source_type": "sop",
+    "title": "权限审批SOP#018",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步内控队列，步骤4回写resolution与close_reason。SOP-018。",
+    "tags": [
+      "approval",
+      "内控队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-019",
+    "source_type": "sop",
+    "title": "报修工单SOP#019",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步维修队列，步骤4回写resolution与close_reason。SOP-019。",
+    "tags": [
+      "support",
+      "维修队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-020",
+    "source_type": "sop",
+    "title": "投诉升级SOP#020",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步值班负责人，步骤4回写resolution与close_reason。SOP-020。",
+    "tags": [
+      "complaint",
+      "值班负责人",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-021",
+    "source_type": "sop",
+    "title": "账单争议SOP#021",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步财务队列，步骤4回写resolution与close_reason。SOP-021。",
+    "tags": [
+      "billing",
+      "财务队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-022",
+    "source_type": "sop",
+    "title": "人工接管SOP#022",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步人工客服，步骤4回写resolution与close_reason。SOP-022。",
+    "tags": [
+      "handoff",
+      "人工客服",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-023",
+    "source_type": "sop",
+    "title": "服务中断SOP#023",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步oncall，步骤4回写resolution与close_reason。SOP-023。",
+    "tags": [
+      "incident",
+      "oncall",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-024",
+    "source_type": "sop",
+    "title": "权限审批SOP#024",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步内控队列，步骤4回写resolution与close_reason。SOP-024。",
+    "tags": [
+      "approval",
+      "内控队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-025",
+    "source_type": "sop",
+    "title": "报修工单SOP#025",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步维修队列，步骤4回写resolution与close_reason。SOP-025。",
+    "tags": [
+      "support",
+      "维修队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-026",
+    "source_type": "sop",
+    "title": "投诉升级SOP#026",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步值班负责人，步骤4回写resolution与close_reason。SOP-026。",
+    "tags": [
+      "complaint",
+      "值班负责人",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-027",
+    "source_type": "sop",
+    "title": "账单争议SOP#027",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步财务队列，步骤4回写resolution与close_reason。SOP-027。",
+    "tags": [
+      "billing",
+      "财务队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-028",
+    "source_type": "sop",
+    "title": "人工接管SOP#028",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步人工客服，步骤4回写resolution与close_reason。SOP-028。",
+    "tags": [
+      "handoff",
+      "人工客服",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-029",
+    "source_type": "sop",
+    "title": "服务中断SOP#029",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步oncall，步骤4回写resolution与close_reason。SOP-029。",
+    "tags": [
+      "incident",
+      "oncall",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-030",
+    "source_type": "sop",
+    "title": "权限审批SOP#030",
+    "content": "步骤1收集证据，步骤2更新ticket状态，步骤3同步内控队列，步骤4回写resolution与close_reason。SOP-030。",
+    "tags": [
+      "approval",
+      "内控队列",
+      "SOP"
+    ]
+  },
+  {
+    "doc_id": "sop-it-001",
+    "source_type": "sop",
+    "title": "SOP：员工电脑故障现场处理流程",
+    "content": "适用范围：所有办公电脑硬件/软件故障\n步骤：\n1. 接单确认：查看工单描述、优先级、报修人位置和联系方式\n2. 远程诊断（5分钟内）：通过电话/企微联系用户，了解故障现象，尝试远程指导解决\n3. 现场处理（15分钟内到达）：携带常用工具（U盘、网线、转接头、备用键鼠）\n4. 故障分类：\n   - 软件问题：系统/驱动/应用故障，尝试修复或重装\n   - 硬件问题：确认故障部件，有备件当场更换，无备件申请采购\n   - 网络问题：检查网线/AP/交换机，联系网络工程师\n5. 临时方案：如无法立即修复，提供备用机或临时解决方案\n6. 记录归档：在工单中记录故障原因、处理过程、使用备件\n7. 用户确认：请用户验证设备恢复正常，签字确认\n8. 关闭工单：24小时内回访确认无复发\n时限：P1-2小时，P2-4小时，P3-1个工作日，P4-3个工作日",
+    "tags": [
+      "SOP",
+      "维修",
+      "电脑",
+      "现场"
+    ]
+  },
+  {
+    "doc_id": "sop-it-002",
+    "source_type": "sop",
+    "title": "SOP：网络故障应急响应流程",
+    "content": "适用范围：公司网络中断/大面积网络异常\n步骤：\n1. 故障确认（5分钟）：确认影响范围（单个工位/整个楼层/全公司）\n2. 初步排查（10分钟）：\n   - 检查核心交换机状态（指示灯、管理界面）\n   - 检查出口路由器/防火墙状态\n   - 检查ISP线路（光猫信号灯）\n3. 分级响应：\n   - 单点故障：检查该工位网线/AP，更换故障设备\n   - 区域故障：检查区域交换机，重启或更换\n   - 全网故障：联系ISP确认线路，切换备用线路\n4. 通知通报：影响超过10人时，在企业微信全员群发布故障通知\n5. 临时方案：启用4G/5G备用路由，优先保障关键业务\n6. 故障恢复：确认网络恢复正常，测试关键系统访问\n7. 事后分析：24小时内输出故障报告（原因、影响、改进措施）\n8. 预防改进：更新监控阈值，优化冗余方案\n时限：全网故障15分钟响应，2小时恢复",
+    "tags": [
+      "SOP",
+      "网络",
+      "应急",
+      "故障"
+    ]
+  },
+  {
+    "doc_id": "sop-it-003",
+    "source_type": "sop",
+    "title": "SOP：信息安全事件应急响应流程",
+    "content": "适用范围：病毒感染、数据泄露、黑客攻击等安全事件\n步骤：\n1. 事件发现与报告：任何员工发现安全异常立即报告IT安全团队\n2. 事件定级：\n   - 一级（特别重大）：核心系统被入侵、大量数据泄露\n   - 二级（重大）：部门级系统受影响、敏感数据可能泄露\n   - 三级（一般）：单台设备感染病毒、钓鱼邮件\n3. 应急处置：\n   - 隔离受影响设备（断网、关机）\n   - 保护现场（不删除日志、不重启）\n   - 通知相关方（管理层、法务、公关视情况）\n4. 调查分析：收集日志、追踪攻击路径、评估影响范围\n5. 恢复处理：清除恶意代码、修补漏洞、恢复数据（从备份）\n6. 通报总结：编写事件报告，全员通报（脱敏后），更新安全策略\n7. 法律合规：如涉及个人信息泄露，按《个人信息保护法》要求72小时内报告监管部门\n时限：发现后15分钟内定级，1小时内启动应急响应",
+    "tags": [
+      "SOP",
+      "安全",
+      "应急",
+      "事件"
+    ]
+  },
+  {
+    "doc_id": "sop-it-004",
+    "source_type": "sop",
+    "title": "SOP：新员工IT环境配置流程",
+    "content": "适用范围：所有新入职员工\n前置条件：HR提前3个工作日通知IT\n步骤：\n1. 设备准备：\n   - 从仓库领取笔记本电脑（检查外观、电池、配件）\n   - 安装标准系统镜像（Windows 11 + Office 365 + 常用软件）\n   - 贴资产标签，录入资产管理系统\n   - 准备鼠标、键盘、笔记本包、电源适配器\n2. 账号创建：\n   - 在AD中创建域账号（初始密码：Company@工号）\n   - 创建邮箱账号（格式：姓名拼音@company.com）\n   - 加入默认安全组（WiFi访问、OA访问、共享盘访问）\n   - 根据岗位加入额外权限组（需主管邮件确认）\n3. 入职当天：\n   - 设备发放，签署《IT设备领用单》\n   - 协助首次登录（改密码、连WiFi、配置邮箱）\n   - 发放工牌和门禁卡\n   - 介绍IT服务渠道（工单系统、服务台位置、紧急电话）\n4. 入职培训：\n   - 一周内完成信息安全在线培训\n   - 发送《IT使用指南》邮件\n5. 一周回访：确认设备使用正常，解答疑问",
+    "tags": [
+      "SOP",
+      "入职",
+      "配置",
+      "新员工"
+    ]
+  },
+  {
+    "doc_id": "sop-it-005",
+    "source_type": "sop",
+    "title": "SOP：IT设备采购与报废流程",
+    "content": "适用范围：所有IT设备（电脑、服务器、网络设备、外设）的采购和报废\n采购流程：\n1. 需求申请：使用部门提交《IT设备采购申请》，说明用途、配置要求、预算\n2. 技术评估：IT部门评估配置合理性，推荐型号（优先框架协议供应商）\n3. 审批流程：部门负责人→IT总监→财务总监（>5000元）→总经理（>20000元）\n4. 采购执行：采购部按审批结果下单，IT参与验收\n5. 入库登记：设备到货后IT验收，录入资产管理系统，贴资产标签\n报废流程：\n1. 报废申请：使用部门或IT提交《IT设备报废申请》，说明报废原因\n2. 技术鉴定：IT确认设备无法修复或维修成本超过残值\n3. 审批流程：IT总监→财务总监→总经理（原值>10000元）\n4. 数据擦除：IT使用专业工具擦除存储设备数据（DoD 5220.22-M标准）\n5. 资产核销：财务部进行资产核销，更新资产台账\n6. 处置：交由有资质的回收商处理，保留处置记录\n使用年限：笔记本4年、台式机5年、服务器5年、网络设备5年、外设2年",
+    "tags": [
+      "SOP",
+      "采购",
+      "报废",
+      "设备"
+    ]
+  },
+  {
+    "doc_id": "sop-it-006",
+    "source_type": "sop",
+    "title": "SOP：系统变更与发布管理流程",
+    "content": "适用范围：所有生产系统的变更（升级、配置修改、新功能上线）\n步骤：\n1. 变更申请：提交《系统变更申请》，说明变更内容、影响范围、回退方案\n2. 风险评估：IT评估变更风险等级（低/中/高）\n3. 审批：\n   - 低风险：IT主管审批\n   - 中风险：IT总监审批\n   - 高风险：变更委员会（CAB）审批\n4. 测试验证：在测试环境验证变更，输出测试报告\n5. 变更窗口：生产变更安排在维护窗口（通常为周六22:00-周日6:00）\n6. 变更通知：提前3个工作日通知受影响用户\n7. 执行变更：按变更方案执行，全程记录操作日志\n8. 验证确认：变更后验证系统功能正常\n9. 回退准备：如变更失败，在30分钟内执行回退方案\n10. 变更关闭：变更后3天内无异常，关闭变更单\n紧急变更：可先执行后补审批，但需在24小时内完成所有手续",
+    "tags": [
+      "SOP",
+      "变更",
+      "发布",
+      "系统"
+    ]
+  },
+  {
+    "doc_id": "sop-it-007",
+    "source_type": "sop",
+    "title": "SOP：数据备份与恢复操作流程",
+    "content": "适用范围：所有业务系统的数据备份和灾难恢复\n备份策略：\n1. 数据库：每日全量备份（凌晨2:00），每小时增量备份，保留30天\n2. 文件服务器：每日增量备份，每周全量备份，保留90天\n3. 邮件系统：实时归档，保留3年\n4. 配置数据：每次变更后立即备份\n5. 备份存储：本地NAS + 异地云存储（双备份）\n恢复流程：\n1. 恢复申请：提交《数据恢复申请》，说明恢复原因、目标时间点\n2. 审批：部门负责人→IT总监审批\n3. 恢复执行：\n   - 从备份系统定位目标备份版本\n   - 在隔离环境验证备份完整性\n   - 执行恢复操作，记录恢复日志\n4. 验证确认：申请人验证数据完整性\n5. 归档记录：记录恢复原因、过程、结果\n演练要求：\n- 每季度进行一次备份恢复演练\n- 每年进行一次灾难恢复演练\n- 演练结果报告提交IT总监",
+    "tags": [
+      "SOP",
+      "备份",
+      "恢复",
+      "数据"
+    ]
+  },
+  {
+    "doc_id": "sop-it-008",
+    "source_type": "sop",
+    "title": "SOP：会议室设备巡检与维护流程",
+    "content": "适用范围：所有会议室的AV设备（投影仪、视频会议系统、音响、麦克风）\n巡检频率：每周一次\n巡检内容：\n1. 投影仪：\n   - 检查灯泡时长（超过3000小时申请更换）\n   - 测试HDMI/VGA输入切换\n   - 清洁过滤网\n   - 检查画面清晰度和色彩\n2. 视频会议系统：\n   - 测试摄像头（对焦、旋转、变焦）\n   - 测试麦克风和扬声器\n   - 测试屏幕共享功能\n   - 检查网络连接和带宽\n3. 音响系统：\n   - 测试各声道输出\n   - 检查麦克风电池\n   - 测试无线麦克风配对\n4. 环境检查：\n   - 检查桌椅完好\n   - 检查照明正常\n   - 检查空调温度\n维护记录：\n- 每次巡检填写《会议室设备巡检表》\n- 发现故障立即报修，标注影响会议室\n- 重大会议前1天进行专项检查\n备件管理：\n- 常备备件：HDMI线2根、麦克风电池4节、遥控器2个\n- 备件不足时及时申购",
+    "tags": [
+      "SOP",
+      "会议室",
+      "巡检",
+      "维护"
+    ]
+  },
+  {
+    "doc_id": "sop_proj_0001",
+    "source_type": "sop",
+    "title": "SOP: 重启 Ops API 并验证健康",
+    "content": "1) mkdir -p logs\n2) pkill -f \"python -m scripts.ops_api_server\" || true\n3) nohup python -m scripts.ops_api_server --env dev --host 127.0.0.1 --port 18082 > logs/ops_api_server.log 2>&1 &\n4) curl http://127.0.0.1:18082/healthz",
+    "tags": [
+      "sop",
+      "ops",
+      "healthcheck"
+    ]
+  },
+  {
+    "doc_id": "sop_proj_0002",
+    "source_type": "sop",
+    "title": "SOP: 启动 Web Console 并验证页面",
+    "content": "1) cd web_console\n2) npm install\n3) npm run dev -- --host 0.0.0.0 --port 3001\n4) 打开 /tickets、/kb/faq 并确认页面可访问",
+    "tags": [
+      "sop",
+      "web_console",
+      "runbook"
+    ]
+  },
+  {
+    "doc_id": "sop_proj_0003",
+    "source_type": "sop",
+    "title": "SOP: 工单知识库回归校验",
+    "content": "1) cd web_console && npm run lint\n2) cd web_console && npm run typecheck\n3) cd web_console && npm run test -- tickets\n4) 检查 /kb/faq 是否展示来源与许可证字段",
+    "tags": [
+      "sop",
+      "qa",
+      "kb"
+    ]
+  }
+]
