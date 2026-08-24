@@ -63,11 +63,14 @@ decision, under two hard conditions:
 
 Do not introduce without explicit request:
 
-- MCP
 - GraphRAG
 - Kafka
-- Kubernetes
 - ERPNext
 - ten-system architecture
 - legacy compatibility APIs
 - multiple Ticket APIs
+
+Note: MCP and Kubernetes were unblocked on 2026-08-24 by owner decision
+(JD alignment). Conditions: MCP servers expose READ-ONLY capabilities
+first and Invariant 4 still applies to anything they trigger; K8s is an
+authoring/deployment target, not a mandate to restructure the runtime.
