@@ -48,11 +48,21 @@ Before implementing a task:
 5. Run targeted tests.
 6. Run full tests when the phase is complete.
 
+## Agent topology
+
+A single bounded agent loop is the default. Multi-agent designs (e.g.
+diagnosis/execution sub-agents) are permitted since 2026-08-24 by owner
+decision, under two hard conditions:
+
+- Invariant 4 still applies: no agent may directly mutate sensitive Ticket
+  state; execution goes through deterministic services + Approval.
+- Each added agent must have a single clear responsibility and its own
+  tests; no shared mutable memory between agents.
+
 ## Forbidden
 
 Do not introduce without explicit request:
 
-- Multi-Agent
 - MCP
 - GraphRAG
 - Kafka
