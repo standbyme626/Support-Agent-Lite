@@ -18,7 +18,8 @@ from enum import Enum
 from app.domain.ticket import Ticket, TicketStatus
 from app.infrastructure.repositories import TicketStore
 
-EXPLICIT_TICKET_RE = re.compile(r"\b(T\d{3,})\b")
+# \b fails between CJK and "T" (both unicode word chars):
+EXPLICIT_TICKET_RE = re.compile(r"(?<![A-Za-z0-9])(T\d{3,})(?!\d)")
 
 
 class ResolutionKind(str, Enum):

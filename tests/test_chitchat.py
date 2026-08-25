@@ -161,3 +161,11 @@ def test_ticket_reference_never_degrades_to_chitchat():
     router = IntentRouter()
     d = router.route("帮我看看T0004现在到哪一步了")
     assert d.intent == "progress_query"
+
+
+def test_explicit_ticket_id_after_cjk_resolves():
+    """「看看T0004」——CJK 与 T 相邻时 \\b 边界失效曾导致按会话错绑工单。"""
+    from app.application.ticket_service import EXPLICIT_TICKET_RE
+
+    assert EXPLICIT_TICKET_RE.search("帮我看看T0004现在到哪一步了")
+    assert EXPLICIT_TICKET_RE.search("T0004进度")
