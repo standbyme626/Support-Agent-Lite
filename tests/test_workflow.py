@@ -154,7 +154,7 @@ def test_other_intent_real_handoff() -> None:
     """AC-21 semantics apply to the `other` branch too: a truthful '专人跟进'
     reply must back a real ticket + operator work item (no fake handoff)."""
     client, store = _client()
-    resp = _wecom(client, "你好", "m1")
+    resp = _wecom(client, "给我讲个笑话吧", "m1")  # unclassifiable request (was: greeting)
     body = resp.json()
     assert body["workflow"] == "other"
     assert body["ticket_id"] == "T0001"

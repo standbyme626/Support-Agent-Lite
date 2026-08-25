@@ -19,7 +19,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-VALID_INTENTS = frozenset({"faq", "support", "progress_query", "other"})
+VALID_INTENTS = frozenset({"faq", "support", "progress_query", "other", "chitchat"})
+
+# Chitchat: greetings / identity / thanks / farewell / help. Matched as
+# whole-phrase containment on SHORT messages only, so real requests that
+# happen to contain a polite word are never hijacked.
+_CHITCHAT_PHRASES: tuple[str, ...] = (
+    "你好", "您好", "在吗", "你是谁", "你叫什么", "你是机器人",
+    "是不是机器人", "你是ai吗", "你能做什么", "你会什么",
+    "谢谢", "多谢", "感谢", "再见", "拜拜", "辛苦了",
+)
+_CHITCHAT_EXACT: frozenset[str] = frozenset({
+    "help", "/help", "帮助", "怎么用", "怎么使用", "使用说明",
+})
+_CHITCHAT_MAX_LEN = 15
 
 
 @dataclass(frozen=True)
@@ -65,10 +78,31 @@ class IntentRouter:
     def __init__(self, threshold: float = 0.58) -> None:
         self._threshold = threshold
 
+    @staticmethod
+    def _has_business_signal(text: str) -> bool:
+        """Any strong business keyword overrides chitchat even in short text."""
+        for keywords in (
+            IntentRouter._intent_keywords["support"],
+            IntentRouter._intent_keywords["progress_query"],
+            IntentRouter._intent_keywords["faq"],
+        ):
+            if any(k in text for k in keywords):
+                return True
+        return False
+
     def route(self, message: str) -> IntentDecision:
         normalized = message.strip().lower()
         if not normalized:
             return IntentDecision("other", 0.0, True, "empty-message")
+
+        # Chitchat first: short social messages must never fall through to
+        # the handoff-ticket path (B-fix: 「你好你是谁」不建单).
+        if normalized in _CHITCHAT_EXACT or (
+            len(normalized) <= _CHITCHAT_MAX_LEN
+            and any(p in normalized for p in _CHITCHAT_PHRASES)
+            and not self._has_business_signal(normalized)
+        ):
+            return IntentDecision("chitchat", 1.0, False, "chitchat-match")
 
         scored = [
             (intent, self._score(normalized, keywords))

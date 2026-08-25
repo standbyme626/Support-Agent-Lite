@@ -63,6 +63,37 @@ _NO_ANSWER_REPLY = (
 _OTHER_REPLY = "您的问题需要人工支持处理，我已记录下来，会尽快由专人跟进。"
 _STAFF_OTHER_REPLY = "已收到消息。如需操作工单请使用命令（如：认领 T0002 / T0002 已修复 解决）。"
 
+_SELF_INTRO_REPLY = (
+    "我是企业支持助手 🤖 可以帮您：\n"
+    "1. 报修（直接描述故障，如「A3 空调坏了」）\n"
+    "2. 知识库问答（如「VPN 怎么配置」）\n"
+    "3. 查进度（发送工单号，如「T0001 进度」）\n"
+    "工单的处理、关闭由运维人员按流程操作。"
+)
+_GREETING_REPLY = "您好！报修请直接描述故障（如「A3 空调坏了」），或输入「帮助」查看我能做什么。"
+_THANKS_REPLY = "不客气～如果还有问题随时找我。"
+_BYE_REPLY = "再见！有需要随时找我。"
+_HELP_REPLY = (
+    "使用指南：\n"
+    "· 报修：直接描述故障（「A3 空调坏了」「电脑蓝屏了」）\n"
+    "· 问答：「VPN 怎么配置」「发票怎么开」\n"
+    "· 查进度：「T0001 进度」\n"
+    "· 关单：运维解决后您回复确认即可"
+)
+
+
+def _chitchat_reply(text: str) -> str:
+    t = text.strip().lower()
+    if any(k in t for k in ("你是谁", "你叫什么", "机器人", "你能做什么", "你会什么", "ai")):
+        return _SELF_INTRO_REPLY
+    if any(k in t for k in ("谢谢", "多谢", "感谢", "辛苦")):
+        return _THANKS_REPLY
+    if any(k in t for k in ("再见", "拜拜")):
+        return _BYE_REPLY
+    if t in ("help", "/help", "帮助", "怎么用", "怎么使用", "使用说明"):
+        return _HELP_REPLY
+    return _GREETING_REPLY
+
 _OPERATOR_GUIDANCE = "共享群内操作需要显式工单号，例如：/claim T1001、/resolve T1001 说明、/escalate T1001 原因。"
 
 _APPROVAL_GUIDANCE = "审批命令格式：/approve apr_xxx 或 /reject apr_xxx 原因。"
@@ -74,6 +105,7 @@ class WorkflowKind(str, Enum):
     TICKET = "ticket"
     PROGRESS = "progress"
     CLARIFY = "clarify"
+    CHITCHAT = "chitchat"
     OTHER = "other"
     OPERATOR_ACTION = "operator_action"
     APPROVAL_ACTION = "approval_action"
@@ -307,6 +339,8 @@ class SupportWorkflow:
         )
         if decision.intent == "faq":
             return self._prepare_faq(envelope, user, session, conversation)
+        if decision.intent == "chitchat":
+            return self._prepare_chitchat(envelope, user, session, conversation)
         if decision.intent == "support":
             return self._prepare_support(envelope, user, session, conversation)
         if decision.intent == "progress_query":
@@ -434,6 +468,18 @@ class SupportWorkflow:
         )
         reply = self._status_line(ticket)
         return self._deterministic(envelope, user, session, WorkflowKind.PROGRESS, reply, ticket)
+
+    def _prepare_chitchat(
+        self, envelope: InboundEnvelope, user: User, session: Session, conversation: Conversation
+    ) -> PreparedOutcome:
+        """Social messages (greetings/identity/thanks/help): reply only.
+
+        Never creates a ticket — the B-fix for 「你好你是谁」spawning
+        handoff tickets. Deterministic, no LLM, no state change.
+        """
+        return self._deterministic(
+            envelope, user, session, WorkflowKind.CHITCHAT, _chitchat_reply(envelope.text)
+        )
 
     def _prepare_other(
         self, envelope: InboundEnvelope, user: User, session: Session, conversation: Conversation

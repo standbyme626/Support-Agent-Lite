@@ -48,10 +48,10 @@ def test_support_wins_tie_with_faq_phrasing() -> None:
     assert decision.intent == "support"
 
 
-def test_greeting_routes_to_other() -> None:
+def test_greeting_routes_to_chitchat() -> None:
     decision = route("你好")
-    assert decision.intent == "other"
-    assert decision.is_low_confidence is True
+    assert decision.intent == "chitchat"
+    assert decision.is_low_confidence is False
 
 
 def test_empty_message_is_low_confidence_other() -> None:
