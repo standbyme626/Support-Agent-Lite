@@ -7,6 +7,7 @@
 - **V1(Core)** AC-01 ~ AC-10:Canonical Identity、跨渠道工单解析、四状态单状态机、RAG grounding、Agent advice-only、Long-term Memory、全链路 Trace
 - **V2(Collaboration Layer)** AC-11 ~ AC-30:Conversation Purpose / Role / Canonical Operator / 三面可见性 / 事务性通知 Outbox / 官方协议契约 / 确认关闭 / HITL 执行链 / 并发修复
 - **V2.1(Agent Core)** AC-A01 ~ AC-A20:有状态有边界的 SupportAgent(AgentContext 全感知 → 有限只读工具 → 结构化 AgentDecision)、两阶段事务(LLM 不占写锁)、崩溃可恢复处理状态、PromptRegistry、Agent eval 套件、PRIVATE_DETAIL 首联直投、关闭后门收口、REST actor/role 信任边界
+- **V3(Enterprise Retrieval & Multi-Agent)** C9/C2/C10/B1:**五实体检索路由**(意图级工具白名单 + L4 实体拦截 + 脱敏输出)、**混合检索**(TF-IDF+向量 RRF 双路召回 + Qwen3-Reranker 重排,419 条中文语料)、**问数子代理**(NL→受限统计规格→只读执行,首个多 Agent 组件)、**LLM Provider 注册表**(openrouter/bailian/deepseek 内置,FallbackLLMClient)
 
 > 旧项目 `support-agent-platform` 以只读方式保存在 `reference/`,仅作参考,禁止修改/提交。
 
@@ -17,6 +18,9 @@
 - [总体架构](#总体架构)
 - [核心不变量](#核心不变量)
 - [V2.1 Agent Core](#v21-agent-core)
+- [V3 企业级检索路由(C9)](#v3-企业级检索路由c9)
+- [V3 混合检索(C2)](#v3-混合检索c2)
+- [V3 问数子代理(C10)](#v3-问数子代理c10)
 - [消息处理流程图](#消息处理流程图)
 - [工单状态机](#工单状态机)
 - [协作与通知链路](#协作与通知链路)
@@ -28,7 +32,7 @@
 - [快速开始](#快速开始)
 - [一键演示](#一键演示)
 - [测试与质量指标](#测试与质量指标)
-- [真实渠道接入(未来)](#真实渠道接入未来)
+- [真实渠道接入](#真实渠道接入)
 - [文档](#文档)
 
 ---
@@ -51,9 +55,11 @@
 │   IdentityResolver · ConversationService · RoleService               │
 │   TicketService · TicketActionService(确定性执行器)                   │
 │   NotificationService(事务性 Outbox) · TargetResolver                │
-│   CommandParser · Workflow(purpose 路由) · SupportAgent(有状态 Agent) │
-│   AgentToolPort(只读) · PolicyValidator(提案门禁) · PromptRegistry    │
-│   MemoryService · ApprovalService · TraceLogger · IngressService(两阶段) │
+│   CommandParser · Workflow(purpose 路由 + 工具白名单装配)              │
+│   SupportAgent(有状态 Agent) · EntityGuard(L4 实体拦截)              │
+│   AgentToolPort(只读 8 工具) · PolicyValidator(提案门禁)             │
+│   PromptRegistry · MemoryService · ApprovalService · TraceLogger     │
+│   StatsAgent(问数子代理,C10) · IngressService(两阶段)                │
 ├─────────────────────────────────────────────────────────────────────┤
 │ domain(领域模型)                                                       │
 │   User / ChannelIdentity / Session · Conversation(Type/Purpose)     │
@@ -63,15 +69,20 @@
 ├─────────────────────────────────────────────────────────────────────┤
 │ infrastructure                                                        │
 │   repositories(事务性仓储 + txn() 嵌套安全) · SQLite(串行化连接)         │
-│   IdempotencyStore(原子幂等) · Retriever(FAQ 索引)                     │
-│   LlmClient(可选,超时自动降级) · TraceStore · InboundProcessingStore   │
+│   IdempotencyStore(原子幂等) · Retriever(TF-IDF 关键词路)              │
+│   HybridRetriever(RRF 融合) · VectorStore(numpy 默认/Chroma 可选)      │
+│   SiliconFlow Embedding/Reranker 客户端(Qwen3-8B 双模型)               │
+│   DirectoryService(通讯录+资产台账,L4 精确实体,严禁向量化)              │
+│   LLM Provider 注册表(openrouter/bailian/deepseek+Fallback 链)        │
+│   TraceStore · InboundProcessingStore                                 │
 │   (RECEIVED→AGENT_PENDING→AGENT_COMPLETED→COMPLETED/FAILED_RETRYABLE) │
 ├─────────────────────────────────────────────────────────────────────┤
 │ adapters(协议适配,严禁触碰业务)                                           │
 │   FeishuAdapter(官方 im.message.receive_v1 / token / challenge / AES) │
 │   WeComAdapter(官方 sha1 签名 / AES 解密 / XML / echostr)              │
 │   OutboundClient(Feishu im/v1/messages · WeCom message/send+appchat) │
-│   HttpTransport(记录型,离线) · RealHttpTransport(未来真实联网)           │
+│   HttpTransport(记录型,离线) · RealHttpTransport(真实联网)              │
+│   Feishu WS Bridge(长连接入站桥,生产验证)                               │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -91,7 +102,18 @@ flowchart LR
     subgraph AgentCore["Agent 层(V2.1)"]
         CTX["AgentContext<br/>消息/角色/会话/工单/记忆/RAG"]
         AGT["SupportAgent<br/>有状态·有边界·结构化决策"]
-        TOOL["只读工具(≤2 次)<br/>历史/知识/记忆/允许动作"]
+        WL["工具白名单装配<br/>意图级最小授权(C9)"]
+        TOOL["只读工具 ×8(≤2 次)<br/>历史/知识/记忆/动作/<br/>通讯录/资产/统计/问数"]
+        GUARD["EntityGuard L4 拦截<br/>PII 禁入向量+脱敏"]
+    end
+    subgraph Retrieval["检索层(V3)"]
+        HY["HybridRetriever<br/>TF-IDF + 向量 RRF 融合"]
+        RR["Qwen3-Reranker 重排"]
+        VEC["VectorStore<br/>numpy / Chroma"]
+        GATE["AnswerabilityGate<br/>低置信拒答(Invariant 7)"]
+    end
+    subgraph SubAgent["子代理(V3 C10)"]
+        SA["StatsAgent 问数<br/>NL→受限规格→只读执行"]
     end
     subgraph Collab["协作层(V2)"]
         TS["Ticket Resolver<br/>显式单号→续单/建单"]
@@ -107,13 +129,21 @@ flowchart LR
     end
 
     W --> A --> ID --> CV --> IR
-    IR -->|FAQ| RAG["RAG 检索<br/>grounded 证据"]
+    IR -->|FAQ| GATE
     IR -->|Support| TS
     TS --> WF
     WF -->|建单| ACT
     WF -->|Agent 决策| CTX
-    CTX --> AGT
+    CTX --> GUARD
+    GUARD -->|"实体命中→只留查询工具"| AGT
+    GUARD -->|"正常"| WL
+    WL --> AGT
     AGT -->|信息不足| TOOL
+    TOOL -->|知识检索| HY
+    HY --> VEC
+    HY --> RR --> GATE
+    TOOL -->|统计问题| SA
+    SA -->|口径明确答案| AGT
     TOOL -->|只读结果| AGT
     AGT -->|AgentDecision| WF
     WF -->|proposal| POL
@@ -184,16 +214,21 @@ TicketActionService(确定性执行 → TicketEvent → Notification/Outbox)
 | `rationale` | 给系统/审计的简短可解释理由,**绝不保存 chain-of-thought** |
 | `reply_draft` | ≤300 字的回复草稿(超长即 fallback) |
 
-### 只读工具(第一版全部 READ ONLY)
+### 只读工具(V3 五实体矩阵,共 8 个,全部 READ ONLY)
 
-| 工具 | 用途 | 限制 |
-| --- | --- | --- |
-| `get_ticket_history(ticket_id)` | 工单完整事件历史 + 最近会话 | ≤2 次/run |
-| `search_knowledge(query)` | 检索企业知识库 | ≤2 次/run |
-| `recall_memory(query)` | 该员工既往工单记忆 | ≤2 次/run |
-| `get_allowed_actions(ticket_id, actor_role)` | 当前状态允许的动作 | ≤2 次/run |
+| 工具 | 用途 | 数据路径 | 限制 |
+| --- | --- | --- | --- |
+| `get_ticket_history(ticket_id)` | 工单完整事件历史 + 最近会话 | L2 工单 | ≤2 次/run |
+| `search_knowledge(query)` | 混合检索企业知识库(关键词+向量+重排) | L1 知识库 | ≤2 次/run |
+| `recall_memory(query)` | 该员工既往工单记忆 | 长期记忆 | ≤2 次/run |
+| `get_allowed_actions(ticket_id, actor_role)` | 当前状态允许的动作 | 权限 | ≤2 次/run |
+| `contact_lookup(query)` | 通讯录精确查询(姓名/工号/分机/部门) | **L4 精确实体** | 拦截轮专属 |
+| `asset_lookup(query)` | IT 资产台账查询(资产号/型号/领用人) | **L4 精确实体** | 拦截轮专属 |
+| `ticket_stats(group_by)` | 受限分组统计(列名白名单) | L3 统计 | support 意图 |
+| `ask_stats(question)` | **问数子代理**:NL→受限规格→口径明确答案 | L3 统计 | support/progress |
 
 **没有** claim/resolve/close/approve/reject/assign/update/execute_action——写工具不存在。
+工具按**意图白名单装配**(C9):FAQ 轮只见知识工具,闲聊轮零检索面,L4 拦截轮只留实体查询。
 
 ### 两阶段事务模型(LLM 不占 DB 写锁)
 
@@ -217,6 +252,105 @@ Agent Run(事务之间)
 ### 确定性降级
 
 LLM 不可用 / 超时 / 非法 JSON / 枚举越界 / 超长回复 / 工具被拒 → 全部安全降级到确定性规则分类,业务永不卡死、异常永不外泄。
+
+---
+
+## V3 企业级检索路由(C9)
+
+> **先分类,后检索**:向量检索只占企业 RAG 的 30%,其余是精确查询、关键词与权限。五类实体各走各的检索路径,由确定性代码路由,LLM 只在白名单内选择工具。
+
+### 五实体 × 数据载体
+
+| 实体 | 载体 | 检索路径 | 安全规则 |
+| --- | --- | --- | --- |
+| 知识文档 | `seed/faq/`(419 条中文语料) | L1 混合检索 + 重排 + AnswerabilityGate | 低置信拒答(Invariant 7) |
+| 工单 | tickets/messages(SQLite) | ticket_history / case trace | requester 仅本人 |
+| 人员通讯录 | `seed/directory/employees.json`(30 人,**纯虚构**) | **L4 SQL/LIKE 精确查询** | **严禁向量化**;requester 手机号强制脱敏 |
+| IT 资产 | `seed/directory/assets.json`(30 条,**纯虚构**) | L4 精确查询 | 同上 |
+| 历史记忆 | memories 表 | recall_memory | 规范用户承载 |
+
+### 路由决策流(每条消息)
+
+```mermaid
+flowchart TD
+    IN["用户输入"] --> IR["IntentRouter<br/>faq / support / progress / other"]
+    IR --> G{"EntityGuard 正则拦截<br/>手机号 / 身份证 / E0001 工号 / AST-0307 资产号"}
+    G -->|"命中"| LOCK["本轮锁死:<br/>只挂 contact_lookup + asset_lookup<br/>注入脱敏系统指令"]
+    G -->|"未命中"| ASM{"按意图装配白名单"}
+    ASM -->|"faq"| W1["search_knowledge + recall_memory"]
+    ASM -->|"support"| W2["全量只读 7 工具"]
+    ASM -->|"progress_query"| W3["history + actions + ask_stats"]
+    ASM -->|"no_answer / 闲聊"| W4["零检索面(转人工无需查库)"]
+    W1 & W2 & W3 --> AGT["SupportAgent<br/>白名单内自由选择 ≤2 次"]
+    LOCK --> AGT
+```
+
+### L4 为什么不能走向量?
+
+身份证号 "110" 与 "120" 在向量空间可能很近但业务含义天差地别;分机号、工号、资产号的正确姿势是精确匹配。`EntityGuard` 用正则在入口拦截,命中即禁用向量类工具——**既是检索正确性问题,更是数据安全问题**。
+
+---
+
+## V3 混合检索(C2)
+
+> 用户说"电脑开不了机"靠关键词,"屏幕一直黑着"靠语义——双路召回各取所长,重排去伪存真。
+
+### 检索流水线
+
+```mermaid
+flowchart LR
+    Q["用户 Query"] --> KW["TF-IDF 关键词路<br/>Retriever(419 条)"]
+    Q --> EM["Qwen3-Embedding-8B<br/>4096 维向量化"]
+    EM --> VS["VectorStore 检索<br/>numpy 默认 / Chroma 可选"]
+    KW --> FUS["RRF 融合<br/>(k=60 倒数排名)"]
+    VS --> FUS
+    FUS -->|"Top ~10 候选"| RRANK["Qwen3-Reranker-8B<br/>交叉编码器重排"]
+    RRANK --> OUT["Top-K RetrievalHit<br/>(rerank 分数 0~1)"]
+```
+
+### 关键设计:Invariant 7 不动摇
+
+- `answer()` 门控(分数阈值 ≥0.25 + 匹配词数下限)**保留在关键词侧**,语义不变;
+- 向量/重排只升级 `search()` 质量与 agent 工具召回;
+- **外部服务故障静默降级**:embedding/rerank 任一失败 → 自动回落关键词结果,检索管线永不因外网抖动而失败;
+- 实测:「电脑一插U盘就蓝屏」→ `kb-hw-0004` @0.9994;语料无答案的问题(如「空调不制冷」)全候选得分 ≈0.0001 = 正确的拒答信号。
+
+### 语料
+
+| 来源 | 条数 | 说明 |
+| --- | --- | --- |
+| 手工 FAQ/SOP/方法论 | 113 | 9 大类全覆盖,verify_kb 门禁守护 |
+| 开源数据集中文化(customer-support-tickets) | 306 | 百炼批量本地化,零失败,IT 相关性过滤+标题相似度去重 |
+
+索引构建:`python scripts/build_vector_index.py`(需 `SILICONFLOW_API_KEY`)。
+
+---
+
+## V3 问数子代理(C10)
+
+> 首个多 Agent 组件:**单一职责、无状态、无共享内存、全只读**(AGENTS.md 多 Agent 硬条件全满足)。主 Agent 通过 `ask_stats` 工具调用它,说完即销毁。
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant M as 主Agent(SupportAgent)
+    participant S as 问数子代理(StatsAgent)
+    participant DB as TicketStore(只读)
+    U->>M: "最近一周网络类工单有几个?"
+    M->>S: ask_stats(question)
+    S->>S: LLM→规格JSON + 规则信号交叉校验<br/>_clean() 白名单清洗
+    S->>DB: stats_filtered(category=network,<br/>since=7天前)
+    DB-->>S: {OPEN: 3}
+    S-->>M: "统计口径:last_7d、类别=network。3 单"
+    M-->>U: 引用子代理结果作答
+    Note over S: 无状态调用,结果即销毁<br/>畸形输出降级规则解析
+```
+
+### 三道防线
+
+1. **不生成裸 SQL**:NL 只转换为受限 spec(group_by/status/category/time 全枚举白名单),列名插值前校验;
+2. **LLM 输出不可信**:`deterministic_spec()` 规则提取作为交叉校验与兜底,LLM 漏掉的过滤信号以规则为准;
+3. **口径可审计**:每个答案都带「统计口径」前缀,时间窗/过滤条件显式可见。
 
 ---
 
@@ -376,10 +510,11 @@ Notification(通知各方)
 | 校验 | Pydantic ≥ 2.7 |
 | 存储 | SQLite(单文件,`SerializedConnection` 串行化 + 嵌套安全 `txn()`) |
 | 协议加密 | `cryptography` ≥ 42(AES-256-CBC,Feishu/WeCom 官方加密回调) |
-| 检索 | 确定性 TF 检索(`Retriever`,FAQ 语料,无向量库) |
-| LLM | 可选(OpenRouter),有状态 Agent 语义理解 + 结构化决策;未配置 / 超时 / 非法输出**自动降级为确定性规则** |
-| 测试 | pytest ≥ 8(unit / integration / acceptance / concurrency / protocol contract) |
-| 部署 | 单体 FastAPI 进程,零外部依赖(未来换 Redis/Kafka 前的刻意取舍) |
+| 检索 | TF-IDF 关键词路 + 向量混合(RRF 融合);向量库 numpy 默认 / Chroma 可选(`KB_VECTOR_BACKEND`) |
+| Embedding/Rerank | 硅基流动 Qwen3-Embedding-8B(4096 维)+ Qwen3-Reranker-8B(故障自动降级关键词路) |
+| LLM | Provider 注册表:OpenRouter / 阿里百炼 / DeepSeek 内置 + 通用 `<NAME>_API_KEY/_BASE_URL/_MODEL` env 解析 + FallbackLLMClient;未配置 / 超时 / 非法输出**自动降级为确定性规则** |
+| 测试 | pytest ≥ 8(unit / integration / acceptance / concurrency / protocol contract),278 个,强制离线封闭运行 |
+| 部署 | 单体 FastAPI 进程;Feishu 生产经 WebSocket 长连接桥(`scripts/feishu_ws_bridge.py`),无需公网回调 |
 
 ## 目录结构
 
@@ -409,12 +544,15 @@ Notification(通知各方)
 │   │   ├── ticket_action_service.py # 动作执行器 + HITL _execute
 │   │   ├── notification_service.py # 事务性 Outbox + dispatch(重试)
 │   │   ├── target_resolver.py · command_parser.py
-│   │   ├── workflow.py           #   purpose 路由 + prepare/run_agent/apply 两阶段
+│   │   ├── workflow.py           #   purpose 路由 + prepare/run_agent/apply 两阶段 + 工具白名单装配
 │   │   ├── ingress_service.py    #   原子幂等入口 + 处理状态机
 │   │   ├── intent_router.py · retriever.py · context_builder.py
+│   │   ├── hybrid_retriever.py   #   C2 混合检索(RRF 融合 + 重排 + 降级)
+│   │   ├── entity_guard.py       #   C9 L4 实体拦截(PII 禁入向量)
+│   │   ├── stats_agent.py        #   C10 问数子代理(NL→受限规格→只读执行)
 │   │   ├── support_agent.py      #   V2.1 有状态 Agent(全感知→只读工具→决策)
 │   │   ├── agent_decision.py     #   AgentDecision schema + validate_decision
-│   │   ├── agent_tools.py        #   只读工具端口(≤2 次/run,白名单)
+│   │   ├── agent_tools.py        #   只读工具端口 ×8(≤2 次/run,意图白名单)
 │   │   ├── policy.py             #   PolicyValidator(提案→HITL 门禁)
 │   │   ├── prompt_registry.py · prompts/  # 版本化安全渲染 Prompt 模板
 │   │   ├── memory_service.py · memory_extractor.py
@@ -429,13 +567,22 @@ Notification(通知各方)
 │       ├── db.py                 #   SerializedConnection(RLock)+ apply_migrations
 │       ├── idempotency.py        #   原子幂等(同事务 claim)
 │       ├── processing.py         #   InboundProcessingStore(崩溃可恢复状态机)
-│       ├── repositories.py       #   txn() + 全部仓储
-│       └── llm_client.py         #   可选 LLM,降级安全
+│       ├── repositories.py       #   txn() + 全部仓储(stats_grouped/stats_filtered 受限统计)
+│       ├── directory.py          #   C9 通讯录+资产台账(L4 精确实体,角色感知脱敏)
+│       ├── vector_store.py       #   C2 NumpyVectorStore / ChromaVectorStore + 硅基流动客户端
+│       └── llm.py                #   Provider 注册表(多供应商 + FallbackLLMClient)
 ├── storage/migrations/           # 0001~0014(含 V2 的 0009~0012,V2.1 的 0013~0014)
 ├── seed/
-│   ├── faq/                      # FAQ 语料(检索/评估)
-│   └── conversations.json        # 演示会话注册(4 个群)
-├── tests/                        # 235 个测试(详见测试章节)
+│   ├── faq/                      # 中文知识库语料(419 条:手工 113 + 数据集本地化 306)
+│   ├── directory/                # C9 通讯录/资产台账(30+30,纯虚构 fictitious:true)
+│   └── conversations.json        # 演示会话注册
+├── scripts/
+│   ├── build_kb.py               # 语料合并(idempotent)
+│   ├── verify_kb.py              # KB 质量门禁(schema/去重/冒烟检索)
+│   ├── build_vector_index.py     # C2 向量索引构建(numpy/chroma)
+│   ├── localize_dataset.py       # 开源数据集中文化流水线(百炼批量)
+│   └── feishu_ws_bridge.py       # 飞书 WebSocket 长连接入站桥(生产验证)
+├── tests/                        # 278 个测试(详见测试章节)
 ├── docs/                         # 全部设计文档
 └── reference/                    # 旧项目只读快照(gitignored)
 ```
@@ -570,20 +717,35 @@ WeCom 群  :  URL=…/cgi-bin/appchat/send?access_token=…
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                 # 235 passed(离线、确定性)
+pytest                 # 278 passed(离线、确定性、封闭运行)
 uvicorn app.main:app   # http://127.0.0.1:8000
 ```
 
-可选 LLM(OpenRouter,`.env` 配置,已被 gitignore):
+可选增强(`.env` 配置,已被 gitignore):
 
 ```bash
-LLM_API_KEY=...        # Agent 语义理解 + 结构化决策
-LLM_BASE_URL=...       # 默认 https://openrouter.ai/api/v1
+# LLM(主决策;多供应商注册表,主选 openrouter)
+LLM_API_KEY=...        # 默认 https://openrouter.ai/api/v1
 LLM_MODEL=...          # 默认 nvidia/nemotron-3-ultra-550b-a55b:free
+
+# 硅基流动(C2 向量混合检索:embedding + rerank)
+SILICONFLOW_API_KEY=...
+SILICONFLOW_EMBEDDING_MODEL=Qwen/Qwen3-Embedding-8B
+SILICONFLOW_RERANK_MODEL=Qwen/Qwen3-Reranker-8B
+
+# 阿里百炼(离线批量加工,如数据集中文化)
+BAILIAN_API_KEY=...
+```
+
+启用向量混合检索(默认关闭):
+
+```bash
+python scripts/build_vector_index.py   # 构建索引(需 SILICONFLOW_API_KEY)
+# .env 加 KB_VECTOR_ENABLED=true 后重启即生效
 ```
 
 > 未配置 / 超时 / 非法输出自动降级为确定性规则,永不阻塞主流程。
-> 默认测试**永远离线**:即使 shell 导出了 `REAL_CHANNEL_NETWORK=true`,普通 `pytest` 也强制走记录型 transport;真实联网测试必须显式 `RUN_REAL_CHANNEL_TESTS=1`。
+> 默认测试**永远离线且封闭**:即使 `.env` 配了真实凭据与 `KB_VECTOR_ENABLED=true`,普通 `pytest` 也强制记录型 transport + 关键词检索;真实联网测试必须显式 `RUN_REAL_CHANNEL_TESTS=1`。
 
 ## 一键演示
 
@@ -644,17 +806,24 @@ curl -s http://127.0.0.1:8000/tickets/T0001/case
 | **agent eval (V2.1)** | `test_agent_eval.py` | AC-A20 golden set(14 例,100% 通过率) |
 | **processing (V2.1)** | `test_processing_state.py` | AC-A11~A14 + 并发重复恰好一次 |
 | **prompt registry (V2.1)** | `test_prompt_registry.py` | 版本/加载/变量校验/字面大括号/schema |
+| **hybrid retrieval (V3 C2)** | `test_hybrid_retriever.py` | RRF 融合/去重/numpy 存储往返/外部故障降级关键词路 |
+| **directory + router (V3 C9)** | `test_directory.py` | 种子有效性/精确查询/角色脱敏/L4 正则拦截/意图白名单拒绝 |
+| **stats agent (V3 C10)** | `test_stats_agent.py` | NL→规格(规则+LLM+坏 JSON 三路)/只读断言/SQL 注入拒绝 |
 
 ### 质量指标(测试实测,非预设)
 
 | 指标 | 目标 | 实测 |
 | --- | --- | --- |
-| 全量测试 | — | **235 passed / 0 failed** |
+| 全量测试 | — | **278 passed / 0 failed**(11 秒封闭运行) |
 | Golden Path AC-01~AC-10 | 全绿 | 10/10 |
 | V2 验收 AC-11~AC-30 | 全绿 | 20/20 |
 | V2.1 Agent AC-A01~AC-A20 | 全绿 | 20/20 |
 | Agent golden eval set | 10+ 例 | **14/14(100%)** |
 | FAQ 检索 Recall@3 | ≥ 90% | **100%**(14/14) |
+| KB 质量门禁 verify_kb | 全绿 | 419 条语料,14/14 冒烟查询命中,零近似重复 |
+| 混合检索 rerank 精度 | 可用 | 「插U盘蓝屏」→ kb-hw-0004 @0.999;无答案问题全候选 ≈0(正确拒答信号) |
+| 问数子代理口径可审计 | 是 | 每答案带「统计口径」前缀(测试) |
+| L4 PII 脱敏 | requester 永不见完整手机号 | 正则断言通过 |
 | 记忆抽取 Precision | ≥ 85% | **100%**(11/11) |
 | 记忆 confidence 参与排序 | 是 | 相同相关性按 confidence 排序(测试) |
 | LLM 延迟不占写锁 | 是 | SlowLLM 0.6s 期间锁可被其他事务获取 |
@@ -668,22 +837,23 @@ curl -s http://127.0.0.1:8000/tickets/T0001/case
 
 ---
 
-## 真实渠道接入(未来)
+## 真实渠道接入
 
-当前所有 Demo/测试默认离线(`REAL_CHANNEL_NETWORK` 未设置)。未来接入真实渠道:
+**飞书渠道已真实接入并生产验证**(2026-08):
 
 ```bash
-# 企业微信
-export WECOM_CORP_ID=... WECOM_CORP_SECRET=... WECOM_AGENT_ID=...
-export WECOM_TOKEN=... WECOM_ENCODING_AES_KEY=...     # 回调验签/解密
-# 飞书
-export FEISHU_APP_ID=... FEISHU_APP_SECRET=...
-export FEISHU_VERIFICATION_TOKEN=... FEISHU_ENCRYPT_KEY=...
-# 真实出站
-export REAL_CHANNEL_NETWORK=true
+# .env(已 gitignore)
+REAL_CHANNEL_NETWORK=true
+FEISHU_APP_ID=... FEISHU_APP_SECRET=...
+FEISHU_VERIFICATION_TOKEN=... FEISHU_ENCRYPT_KEY=...
+
+# WebSocket 长连接桥:无需公网回调 URL,本地开发机即可收发
+python scripts/feishu_ws_bridge.py
 ```
 
-然后配置平台回调 URL 指向 `/webhooks/{channel}`,提供真实 conversation ids 并注册。**只需 config + transport,无需重设计** Identity / Conversation / Ticket / Notification / Workflow / Agent。
+真实环境已完成全链路验证:群报修 → 建单三面通知 → 运维认领/解决 → 用户跨渠道确认关闭 → 记忆抽取 → 新会话召回。
+
+企业微信接入(未来):配置 `WECOM_CORP_ID / WECOM_CORP_SECRET / WECOM_AGENT_ID / WECOM_TOKEN / WECOM_ENCODING_AES_KEY`,平台回调 URL 指向 `/webhooks/wecom`。**只需 config + transport,无需重设计** Identity / Conversation / Ticket / Notification / Workflow / Agent。
 
 > 注意:`.env` 中即使配置了 `REAL_CHANNEL_NETWORK=true` 与真实凭据,普通 `pytest` 仍不会联网——测试套件在 import 时强制离线,真实联网测试需 `RUN_REAL_CHANNEL_TESTS=1` 显式开启。
 
@@ -710,3 +880,6 @@ export REAL_CHANNEL_NETWORK=true
 | `V1_TO_V2_ARCHITECTURE_AUDIT.md` | V1→V2 只读审计 |
 | `docs/reference/LEGACY_ARCHITECTURE_AUDIT.md` | 旧项目架构审计(仅参考) |
 | `v2.md` | V2 实现规格(任务原文) |
+| `升级计划.md` | **V3 升级计划**(Top14 关键词落地 + C9 检索路由定稿 + 数据资产) |
+| `3.md` | 方向 B 决策记录(pi 学习 / JD 对照 / Top14 状态表,持续更新) |
+| `检索.md` | 企业级 RAG 方法论参考(五层数据金字塔 / 多路路由) |
