@@ -57,12 +57,14 @@ _CATEGORY_TO_ACTION = {
 INTENT_SUPPORT = "support"
 INTENT_NO_ANSWER = "no_answer"
 INTENT_FAQ = "faq_answer"
+INTENT_CHITCHAT = "chitchat"
 
 # Scenario prompt packs (B4): one versioned template per intent, all
 # sharing the safety constitution. Unknown intent / missing pack falls
 # back to the base template — prompt selection can never break a run.
 _SCENARIO_PROMPT_KEYS: dict[str, str] = {
     INTENT_FAQ: "agent_decision.faq",
+    INTENT_CHITCHAT: "agent_decision.chitchat",
     INTENT_SUPPORT: "agent_decision.support",
     "progress_query": "agent_decision.progress",
 }
@@ -83,6 +85,11 @@ def _load_constitution() -> str:
 _SYSTEM_PROMPT = _load_constitution()
 
 _SCENARIOS: dict[str, tuple[str, str]] = {
+    INTENT_CHITCHAT: (
+        "日常对话",
+        "轻松自然地与用户自由交谈。硬性边界：绝不声称执行了任何业务动作，不创建/变更/关闭工单；"
+        "用户提出业务需求时友好地引导其描述故障或发送工单号。回复口语化，不超过100字。",
+    ),
     INTENT_SUPPORT: (
         "新工单受理 / 跟进",
         "用户正在上报或跟进一个问题：理解最近对话后总结问题，给出分类与优先级建议，"

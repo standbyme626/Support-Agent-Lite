@@ -66,3 +66,46 @@ def test_regression_repair_still_creates_ticket(app_ctx):
     )
     assert resp.status_code == 200
     assert resp.json()["ticket_id"], "real repair must still create a ticket"
+
+
+# --- LLM-backed chitchat (B-fix v2) -----------------------------------------------
+
+
+def test_chitchat_goes_through_llm_when_available(app_ctx):
+    from tests.fake_llm import make_decision
+
+    from tests.conftest import WECOM_REPAIR_GROUP
+
+    class ChatLLM:
+        model = "chat-fake"
+
+        def complete(self, system: str, user: str) -> str:
+            assert "闲聊" in user or "日常对话" in user  # chitchat pack rendered
+            import json
+
+            return make_decision(summary="闲聊", category="general", action="faq_answer", reply="嗨～我是支持助手，有什么可以帮你？")
+
+    app_ctx.with_llm(ChatLLM())
+    resp = app_ctx.client.post(
+        "/webhooks/wecom",
+        json={"MsgId": "chat-llm-1", "FromUserName": "zhangsan", "Content": "你好呀",
+              "CreateTime": 2000, "conversation_id": WECOM_REPAIR_GROUP},
+    )
+    body = resp.json()
+    assert body["workflow"] == "chitchat"
+    assert "嗨" in body["reply"]
+
+
+def test_test_noise_message_never_creates_ticket(app_ctx):
+    from tests.conftest import WECOM_REPAIR_GROUP
+
+    before = len(list(app_ctx.store.list_by_user(app_ctx.users["zhangsan"])))
+    for i, text in enumerate(["测试", "test", "在么"]):
+        resp = app_ctx.client.post(
+            "/webhooks/wecom",
+            json={"MsgId": f"noise-{i}", "FromUserName": "zhangsan", "Content": text,
+                  "CreateTime": 3000 + i, "conversation_id": WECOM_REPAIR_GROUP},
+        )
+        assert resp.json()["workflow"] == "chitchat", f"{text} should be chitchat"
+    after = len(list(app_ctx.store.list_by_user(app_ctx.users["zhangsan"])))
+    assert after == before

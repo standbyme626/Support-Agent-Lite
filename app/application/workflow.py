@@ -36,6 +36,7 @@ from app.application.policy import PolicyValidator
 from app.application.retriever import RAGAnswer, RetrievalHit, Retriever
 from app.application.role_service import RoleService
 from app.application.support_agent import (
+    INTENT_CHITCHAT,
     INTENT_FAQ,
     INTENT_NO_ANSWER,
     INTENT_SUPPORT,
@@ -247,6 +248,7 @@ class SupportWorkflow:
         base: dict[str, frozenset[str]] = {
             INTENT_FAQ: frozenset({"search_knowledge", "recall_memory"}),
             INTENT_NO_ANSWER: frozenset(),
+            INTENT_CHITCHAT: frozenset(),
             INTENT_SUPPORT: frozenset({
                 "get_ticket_history",
                 "search_knowledge",
@@ -281,7 +283,9 @@ class SupportWorkflow:
     ) -> WorkflowResult:
         """Phase B: persist the validated decision (caller holds txn)."""
         conversation = self._ensure_conversation(envelope, conversation)
-        if prepared.intent == INTENT_FAQ:
+        if prepared.intent == INTENT_CHITCHAT:
+            result = self._apply_chitchat(envelope, user, session, conversation, prepared, run)
+        elif prepared.intent == INTENT_FAQ:
             result = self._apply_faq(envelope, user, session, conversation, prepared, run)
         elif prepared.intent == INTENT_NO_ANSWER:
             result = self._apply_no_answer(envelope, user, session, conversation, prepared, run)
@@ -476,33 +480,46 @@ class SupportWorkflow:
     def _prepare_chitchat(
         self, envelope: InboundEnvelope, user: User, session: Session, conversation: Conversation
     ) -> PreparedOutcome:
-        """Social messages (greetings/identity/thanks/help): reply only.
+        """Social messages (greetings/identity/thanks/help/test noise).
 
-        Never creates a ticket — the B-fix for 「你好你是谁」spawning
-        handoff tickets. Deterministic, no LLM, no state change.
-        The reply MUST reach the user: deterministic outcomes bypass the
-        agent apply-phase, so the outbound record is enqueued here.
+        Goes through the LLM for real conversation BUT with a zero-tool
+        whitelist and no ticket — chitchat can never touch business state
+        (the original bug: 「你好你是谁」/「测试」spawning handoff tickets).
+        LLM failure falls back to the deterministic canned replies.
         """
-        reply = _chitchat_reply(envelope.text)
-        if self._notifications is not None:
-            from app.application.target_resolver import ResolvedTarget
-            from app.domain.notification import NotificationType, Visibility
-            from app.domain.outbound import DeliveryTarget, TargetKind
-
-            self._notifications.enqueue(
-                source_event_id=f"{envelope.trace_id}:chitchat",
-                notification_type=NotificationType.REACTIVE_REPLY,
-                visibility=Visibility.PUBLIC,
-                message=reply,
-                target=ResolvedTarget(
-                    DeliveryTarget(envelope.channel, TargetKind.CONVERSATION, envelope.conversation_id),
-                    "reactive_reply",
-                ),
-                trace_id=envelope.trace_id,
-            )
-        return self._deterministic(
-            envelope, user, session, WorkflowKind.CHITCHAT, reply
+        context = self._build_context(envelope, user, session, None, conversation)
+        return PreparedOutcome(
+            kind=WorkflowKind.CHITCHAT,
+            needs_agent=True,
+            intent=INTENT_CHITCHAT,
+            context=context,
         )
+
+    def _apply_chitchat(
+        self,
+        envelope: InboundEnvelope,
+        user: User,
+        session: Session,
+        conversation: Conversation,
+        prepared: PreparedOutcome,
+        run: AgentRunResult,
+    ) -> WorkflowResult:
+        reply = (
+            run.decision.reply_draft
+            if not run.fallback_used and run.decision is not None
+            else _chitchat_reply(envelope.text)
+        )
+        self._record_reply(reply, user, session, envelope)
+        if self._actions is not None:
+            self._actions.conversation_reply(
+                channel=conversation.channel,
+                conversation_id=conversation.channel_conversation_id,
+                text=reply,
+                trace_id=envelope.trace_id,
+                source_event_id=f"chitchat:{run.run_id}",
+            )
+        self._trace_agent_run(envelope.trace_id, run)
+        return WorkflowResult(kind=WorkflowKind.CHITCHAT, reply=reply)
 
     def _prepare_other(
         self, envelope: InboundEnvelope, user: User, session: Session, conversation: Conversation

@@ -39,6 +39,7 @@ INTENT_ACTIONS: dict[str, frozenset[str]] = {
     "support": frozenset(ACTIONS - {"faq_answer"}),
     "no_answer": frozenset({"assign_operator"}),
     "faq_answer": frozenset({"faq_answer"}),
+    "chitchat": frozenset({"faq_answer"}),
 }
 
 MISSING = object()
