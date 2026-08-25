@@ -239,7 +239,7 @@ def test_agent_observability_trace_fields() -> None:
     agent_run = next(s for s in trace["stages"] if s["stage"] == "agent")
     payload = agent_run["payload"]
     assert payload["agent_run_id"].startswith("agr_")
-    assert payload["prompt_key"] == "agent_decision"
+    assert payload["prompt_key"] == "agent_decision.support"
     assert payload["prompt_version"] == "v1"
     assert payload["model"] == "recording-test-model"
     assert isinstance(payload["latency_ms"], int) and payload["latency_ms"] >= 0

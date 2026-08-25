@@ -110,7 +110,7 @@ def test_agent_analysis_outputs_advice_only(ctx) -> None:
     # deterministic fallback path (no LLM)
     assert run.fallback_used is True
     assert run.fallback_reason == "no_llm"
-    assert run.prompt_key == "agent_decision"
+    assert run.prompt_key == "agent_decision.support"
     assert run.prompt_version == "v1"
     assert run.model == "none"
 
