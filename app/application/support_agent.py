@@ -117,6 +117,8 @@ class AgentRunResult:
     steps: int
     tool_calls: list[ToolCall] = field(default_factory=list)
     error_type: str | None = None
+    skill_key: str | None = None
+    injected_prompt_chars: int = 0
 
 
 class SupportAgent:
@@ -145,7 +147,13 @@ class SupportAgent:
     ) -> AgentRunResult:
         started = time.monotonic()
         run_id = f"agr_{uuid4().hex[:12]}"
-        meta = self._prompts.meta(self._pack_key(intent))
+        try:
+            meta = self._prompts.meta(self._pack_key(intent))
+        except Exception:  # noqa: BLE001 - no templates at all: degrade
+            from app.application.prompt_registry import PromptMeta
+
+            meta = PromptMeta(prompt_key=_BASE_PROMPT_KEY, prompt_version="v0")
+        skill = self._select_skill(intent)
         observations: list[str] = []
         tool_calls: list[ToolCall] = []
         decision: AgentDecision | None = None
@@ -153,6 +161,7 @@ class SupportAgent:
         error_type: str | None = None
         steps = 0
         whitelist = allowed_tools if allowed_tools is not None else ALLOWED_TOOLS
+        last_prompt_chars = 0
 
         while steps < MAX_AGENT_STEPS:
             steps += 1
@@ -160,9 +169,16 @@ class SupportAgent:
                 decision = self._fallback_decision(context, intent)
                 fallback_reason = "no_llm"
                 break
-            prompt = self._render(context, intent, observations) + (
-                f"\n{extra_instructions}" if extra_instructions else ""
-            )
+            try:
+                prompt = self._render(context, intent, observations, skill=skill) + (
+                    f"\n{extra_instructions}" if extra_instructions else ""
+                )
+            except Exception as exc:  # noqa: BLE001 - prompt/skill corruption
+                decision = self._fallback_decision(context, intent)
+                fallback_reason = f"prompt_error:{type(exc).__name__}"
+                error_type = type(exc).__name__
+                break
+            last_prompt_chars = len(prompt)
             try:
                 raw = self._llm.complete(system=_SYSTEM_PROMPT, user=prompt)
                 parsed = self._prompts.extract_json(raw)
@@ -230,6 +246,8 @@ class SupportAgent:
             steps=steps,
             tool_calls=tool_calls,
             error_type=error_type,
+            skill_key=(skill.key if skill else None),
+            injected_prompt_chars=last_prompt_chars,
         )
 
     def analyze(self, context: AgentContext, intent: str = INTENT_SUPPORT) -> AgentDecision:
@@ -247,12 +265,36 @@ class SupportAgent:
         except Exception:  # noqa: BLE001
             return _BASE_PROMPT_KEY
 
-    def _render(self, context: AgentContext, intent: str, observations: list[str]) -> str:
+    def _select_skill(self, intent: str):
+        """B4-v2 skill routing; failure_mode=fallback_main on any error."""
+        try:
+            return self._prompts.select(intent)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _render(
+        self,
+        context: AgentContext,
+        intent: str,
+        observations: list[str],
+        skill=None,
+    ) -> str:
         label, instructions = _SCENARIOS.get(intent, _SCENARIOS[INTENT_SUPPORT])
-        return self._prompts.render(
+        prompt = self._prompts.render(
             self._pack_key(intent),
             self._context_vars(context, intent, label, instructions, observations),
         )
+        # Two-level loading (题1): decision rounds see the summary; once a
+        # tool call has happened (execution round) the full skill body is
+        # injected. Any read failure falls back to main prompt only.
+        if skill is not None:
+            try:
+                level = "完整" if observations else "摘要"
+                body = self._prompts.get_full(skill.key) if observations else self._prompts.get_summary(skill.key)
+                prompt += f"\n# 场景技能 {skill.key}（{level}）\n{body}"
+            except Exception:  # noqa: BLE001 - failure_mode: fallback_main
+                pass
+        return prompt
 
     def _context_vars(
         self,
@@ -288,6 +330,10 @@ class SupportAgent:
         tool_observations = ""
         if observations:
             tool_observations = "# 工具调用记录\n" + "\n\n".join(observations)
+        try:
+            skill_digest = self._prompts.digest() or "（无）"
+        except Exception:  # noqa: BLE001 - digest is cosmetic
+            skill_digest = "（无）"
         return {
             "scenario": scenario_label,
             "scenario_instructions": scenario_instructions,
@@ -302,6 +348,7 @@ class SupportAgent:
             "memories_block": memories,
             "knowledge_block": knowledge,
             "tool_observations": tool_observations,
+            "skill_digest": skill_digest,
         }
 
     # --- deterministic fallback (also the no-LLM path) ---

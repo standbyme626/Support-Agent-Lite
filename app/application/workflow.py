@@ -999,6 +999,8 @@ class SupportWorkflow:
                 "steps": run.steps,
                 "tool_calls": [t.tool for t in run.tool_calls],
                 "tool_call_count": len(run.tool_calls),
+                "skill_key": run.skill_key,
+                "injected_prompt_chars": run.injected_prompt_chars,
                 "summary": run.decision.summary,
                 "category": run.decision.category,
                 "priority": run.decision.priority_suggestion,

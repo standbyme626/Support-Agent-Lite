@@ -105,6 +105,7 @@ def test_real_agent_prompt_renders_with_all_variables() -> None:
             "memories_block": "（无）",
             "knowledge_block": "（无）",
             "tool_observations": "",
+            "skill_digest": "- reply_handoff: 转人工回复（摘要）",
         },
     )
     assert "<user_message>" in rendered

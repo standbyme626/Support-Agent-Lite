@@ -49,6 +49,19 @@ class PromptMeta:
     expected_schema: str = "application/json"
 
 
+@dataclass(frozen=True)
+class SkillMeta:
+    """B4-v2 structured skill definition (seven meta fields)."""
+
+    key: str
+    version: int
+    applies_to: tuple[str, ...]
+    not_applies_to: tuple[str, ...]
+    requires: tuple[str, ...]
+    failure_mode: str
+    output_format: str
+
+
 class PromptRegistry:
     """Loads `<key>.v1.md` templates from the prompts dir on demand."""
 
@@ -106,6 +119,109 @@ class PromptRegistry:
                 f"unbalanced braces in prompt {key}; escape literal braces as {{" "{{}}"
             )
         return rendered.replace("\x01", "{").replace("\x02", "}")
+
+    # --- B4-v2 skill registry -------------------------------------------------
+
+    _SKILLS_SUBDIR = "skills"
+
+    def _skill_path(self, key: str) -> Path:
+        return self._dir / self._SKILLS_SUBDIR / f"{key}.v1.md"
+
+    def skills(self) -> list[SkillMeta]:
+        """All registered skill metas (sorted by key). Missing dir -> []."""
+        d = self._dir / self._SKILLS_SUBDIR
+        if not d.exists():
+            return []
+        out: list[SkillMeta] = []
+        for path in sorted(d.glob("*.v1.md")):
+            try:
+                out.append(self._parse_skill_meta(path))
+            except Exception:  # noqa: BLE001 - a broken skill never breaks others
+                continue
+        return out
+
+    def get(self, key: str) -> SkillMeta:
+        for m in self.skills():
+            if m.key == key:
+                return m
+        raise PromptNotFound(f"skill:{key}")
+
+    def select(self, intent: str | None) -> SkillMeta | None:
+        """Route an intent to at most one skill.
+
+        applies_to must contain the intent; any not_applies_to hit (the
+        negative sample) vetoes. No match -> None (main prompt only).
+        """
+        if not intent:
+            return None
+        intent_l = str(intent).strip().lower()
+        for m in self.skills():
+            if intent_l in m.not_applies_to:
+                continue
+            if intent_l in m.applies_to:
+                return m
+        return None
+
+    def _sections(self, key: str) -> tuple[str, str]:
+        raw = self._load_skill(key)
+        body = _FRONT_MATTER_RE.sub("", raw).strip()
+        parts = body.split("## summary", 1)
+        rest = parts[1] if len(parts) > 1 else ""
+        sec = rest.split("## full", 1)
+        summary = sec[0].strip()
+        full = sec[1].strip() if len(sec) > 1 else ""
+        return summary, full
+
+    def get_summary(self, key: str) -> str:
+        return self._sections(key)[0]
+
+    def get_full(self, key: str) -> str:
+        return self._sections(key)[1]
+
+    def digest(self) -> str:
+        """One line per skill for the slimmed main prompt's skill menu."""
+        lines = []
+        for m in self.skills():
+            try:
+                one_line = self.get_summary(m.key).splitlines()[0][:60]
+            except Exception:  # noqa: BLE001
+                continue
+            lines.append(f"- {m.key}: {one_line}")
+        return "\n".join(lines)
+
+    def _load_skill(self, key: str) -> str:
+        path = self._skill_path(key)
+        if not path.exists():
+            raise PromptNotFound(f"skill:{key}")
+        cache_key = f"skill:{key}"
+        if cache_key not in self._cache:
+            self._cache[cache_key] = path.read_text(encoding="utf-8")
+        return self._cache[cache_key]
+
+    def _parse_skill_meta(self, path: Path) -> SkillMeta:
+        match = _FRONT_MATTER_RE.match(path.read_text(encoding="utf-8"))
+        meta: dict[str, str] = {}
+        if match:
+            for line in match.group(1).splitlines():
+                lm = _META_LINE_RE.match(line.strip())
+                if lm:
+                    meta[lm.group(1)] = lm.group(2).strip()
+
+        def _list(name: str) -> tuple[str, ...]:
+            raw = meta.get(name, "").strip()
+            if not raw or raw == "-":
+                return ()
+            return tuple(x.strip().lower() for x in raw.split(",") if x.strip())
+
+        return SkillMeta(
+            key=meta.get("key", path.stem.split(".")[0]),
+            version=int(meta.get("version", "1")),
+            applies_to=_list("applies_to"),
+            not_applies_to=_list("not_applies_to"),
+            requires=_list("requires"),
+            failure_mode=meta.get("failure_mode", "fallback_main"),
+            output_format=meta.get("output_format", ""),
+        )
 
     @staticmethod
     def extract_json(raw: str) -> dict:

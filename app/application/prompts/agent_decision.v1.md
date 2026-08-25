@@ -7,6 +7,9 @@ expected_schema: application/json
 # 场景
 {scenario}：{scenario_instructions}
 
+# 可用技能摘要（按意图路由后注入；此处为菜单，全文不常驻）
+{skill_digest}
+
 # 输出 Schema（只输出一个 JSON 对象，不要输出任何其他文本、代码块或解释）
 {{"understanding": string, "summary": string, "category": "account|network|device|software|billing|hr|general", "priority_suggestion": "high|normal|low", "recommended_action": "dispatch_repair|network_triage|software_support|credential_reset|finance_review|hr_review|assign_operator|ask_clarification|faq_answer", "missing_information": [string], "confidence": number(0到1之间), "needs_human": boolean, "needs_approval": boolean, "reply_draft": string(150字以内，语气友好，含工单号与当前状态), "memory_refs": [string], "knowledge_refs": [string], "action_proposal": {{"action": "ESCALATE|FORCE_CLOSE", "reason": string, "confidence": number, "ticket_id": string}} 或 null, "rationale": string(简短可解释的决策理由，不要输出思维过程), "tool_request": {{"tool": "get_ticket_history|search_knowledge|recall_memory|get_allowed_actions", "args": {{...}}}} 或 null}}
 
