@@ -219,12 +219,14 @@ class SupportWorkflow:
                 "contact_lookup",
                 "asset_lookup",
                 "ask_stats",
+                "similar_tickets",
             }),
             # progress/统计问询: 问数子代理优先
             "progress_query": frozenset({
                 "get_ticket_history",
                 "get_allowed_actions",
                 "ask_stats",
+                "case_timeline",
             }),
         }
         allowed = base.get(prepared.intent)

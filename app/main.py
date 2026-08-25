@@ -155,6 +155,25 @@ def _stats_agent(llm, store: TicketStore):
     return StatsAgent(llm=llm, tickets=store)
 
 
+def _ticket_index():
+    from pathlib import Path as _Path
+
+    from app.application.ticket_insights import TicketSimilarityIndex
+
+    index_dir = _Path(__file__).resolve().parent.parent / "runtime" / "ticket_index"
+    embedding = None
+    try:
+        import os
+
+        if os.environ.get("KB_VECTOR_ENABLED", "").lower() in ("1", "true", "yes"):
+            from app.infrastructure.vector_store import SiliconFlowEmbedding
+
+            embedding = SiliconFlowEmbedding()
+    except Exception:  # noqa: BLE001 - index is optional by design
+        embedding = None
+    return TicketSimilarityIndex(index_dir=index_dir, embedding=embedding)
+
+
 def _maybe_hybrid(retriever: Retriever) -> Retriever:
     """Wrap the keyword retriever with vector+rerank fusion (C2).
 
@@ -259,8 +278,10 @@ def build_workflow(
     memory = build_memory(conn, store)
     directory = _build_directory(seed_dir)
     stats_agent = _stats_agent(llm, store)
+    ticket_index = _ticket_index()
     tools = AgentToolPort(store, MessageRepository(conn), retriever, memory,
-                          directory=directory, stats_agent=stats_agent)
+                          directory=directory, stats_agent=stats_agent,
+                          ticket_index=ticket_index)
     return SupportWorkflow(
         router=IntentRouter(),
         retriever=retriever,

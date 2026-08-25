@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from app.application.memory_service import MemoryService
 from app.application.retriever import Retriever
 from app.application.stats_agent import StatsAgent
+from app.application.ticket_insights import TicketSimilarityIndex, format_case_timeline
 from app.domain.role import UserRole
 from app.domain.ticket import TicketStatus
 from app.infrastructure.directory import DirectoryService
@@ -30,6 +31,8 @@ ALLOWED_TOOLS = frozenset({
     "asset_lookup",
     "ticket_stats",
     "ask_stats",
+    "similar_tickets",
+    "case_timeline",
 })
 
 # Function-Calling schemas (OpenAI tools format) for the read-only surface.
@@ -129,6 +132,28 @@ TOOL_JSON_SCHEMAS: list[dict] = [
             "required": ["question"],
         },
     },
+    {
+        "name": "similar_tickets",
+        "description": "相似历史工单检索：用当前问题描述查找过往类似案例。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "当前问题的自然语言描述"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "case_timeline",
+        "description": "工单时间线：按时间顺序返回该工单的全部审计事件。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticket_id": {"type": "string", "description": "工单号，如 T0001"},
+            },
+            "required": ["ticket_id"],
+        },
+    },
 ]
 
 
@@ -155,6 +180,7 @@ class AgentToolPort:
         memory: MemoryService,
         directory: DirectoryService | None = None,
         stats_agent: "StatsAgent | None" = None,
+        ticket_index: "TicketSimilarityIndex | None" = None,
     ) -> None:
         self._tickets = tickets
         self._messages = messages
@@ -162,6 +188,7 @@ class AgentToolPort:
         self._memory = memory
         self._directory = directory
         self._stats_agent = stats_agent
+        self._ticket_index = ticket_index
 
     def call(
         self,
@@ -196,6 +223,10 @@ class AgentToolPort:
             else:
                 answer = self._stats_agent.run(question)
                 observation = answer.text
+        elif tool == "similar_tickets":
+            observation = self._similar_tickets(str(args.get("query") or ""))
+        elif tool == "case_timeline":
+            observation = format_case_timeline(self._tickets, str(args.get("ticket_id") or ""))
         else:  # pragma: no cover - guarded by ALLOWED_TOOLS
             raise AgentToolDenied(f"tool not allowed: {tool}")
         return ToolCall(tool=tool, args=dict(args), observation=observation)
@@ -240,6 +271,20 @@ class AgentToolPort:
         return "\n".join(
             f"{hit.memory.id}（score={round(hit.score, 3)}）：{hit.memory.fact}" for hit in hits
         )
+
+    def _similar_tickets(self, query: str) -> str:
+        if self._ticket_index is None or not self._ticket_index.available:
+            return "相似工单索引不可用（未构建或无 embedding 后端）"
+        hits = self._ticket_index.search(query, top_k=3)
+        if not hits:
+            return "未找到相似历史工单"
+        lines = []
+        for ticket_id, score in hits:
+            t = self._tickets.get(ticket_id)
+            title = t.title if t else "-"
+            status = t.status.value if t else "-"
+            lines.append(f"{ticket_id}（score={score:.3f}, {status}）{title}")
+        return "\n".join(lines)
 
     def _contact_lookup(self, query: str) -> str:
         if self._directory is None:
