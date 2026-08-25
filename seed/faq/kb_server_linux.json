@@ -1,0 +1,66 @@
+[
+  {
+    "doc_id": "kb-srv-0001",
+    "source_type": "troubleshooting",
+    "category": "服务器运维",
+    "title": "Linux 启动卡在 starting system logger 后停止（fstab 损坏）",
+    "content": "现象：启动过程中停在 starting system logger 之后不再继续。\n原因：/etc/fstab 配置错误或文件丢失，系统无法挂载分区，多为人为改错所致。\n排查：进入 rescue 修复模式登录系统，用 fdisk -l、blkid 获取挂载点与分区信息。\n解决：重构 /etc/fstab 后重启。预防：修改 fstab 前先 cp 备份，并用 mount -a 预验证。",
+    "tags": ["服务器", "Linux", "fstab", "启动失败"]
+  },
+  {
+    "doc_id": "kb-srv-0002",
+    "source_type": "troubleshooting",
+    "category": "服务器运维",
+    "title": "Linux 非法关机后无法启动（根分区文件系统损坏）",
+    "content": "现象：异常断电后启动报 checking root filesystem，出现 file system with errors, check forced。\n原因：高负载下突然掉电导致 ext3/ext4 日志文件系统内部结构不一致，损坏严重时自动修复失败并进入单用户或交互修复界面。\n排查：按提示输入 root 密码进入修复态，确认受损分区。\n解决：对对应分区执行 fsck -y 修复后 reboot。预防：关键服务器配 UPS；掉电后不要反复强制通电。",
+    "tags": ["服务器", "Linux", "文件系统", "fsck"]
+  },
+  {
+    "doc_id": "kb-srv-0003",
+    "source_type": "troubleshooting",
+    "category": "服务器运维",
+    "title": "开机报 error: file vmlinuz not found（内核文件丢失）",
+    "content": "现象：GRUB 引导报 error: file '/vmlinuz' not found 或 /initrd.img not found，启动中断。\n原因：/boot 分区文件被误删或内核更新中断；vmlinuz 是内核镜像，initrd/initramfs 是初始化内存盘（含启动模块和驱动）。\n排查：确认缺失对象是 vmlinuz 还是 initrd.img；检查 /boot 分区剩余空间与残留文件。\n解决：用可启动修复介质挂载 /boot，从安装介质或备份提取对应文件复制回 /boot，更新 grub.cfg 指向后重启验证。",
+    "tags": ["服务器", "Linux", "vmlinuz", "grub", "内核"]
+  },
+  {
+    "doc_id": "kb-srv-0004",
+    "source_type": "troubleshooting",
+    "category": "服务器运维",
+    "title": "Linux 写入任何文件都报 Read-only file system",
+    "content": "现象：cp/mv/tar/chmod/wget 等所有写盘操作报 Read-only file system。\n原因：文件系统损坏触发自我保护转只读、磁盘坏道，或 fstab 分区格式配置错误（如把 ntfs 写成 fat）。\n排查：查系统日志与报错信息定位来源；确认数据完好后以 mount -o rw,remount /目标 临时恢复读写。\n解决：文件系统错误需在 umount 状态执行 fsck -y 后重启；确认磁盘物理损坏直接换盘。频繁转只读是硬盘将坏的强烈信号，尽快迁移数据。",
+    "tags": ["服务器", "Linux", "只读文件系统", "硬盘"]
+  },
+  {
+    "doc_id": "kb-srv-0005",
+    "source_type": "troubleshooting",
+    "category": "服务器运维",
+    "title": "开机黑屏找不到引导程序（MBR 扇区故障）",
+    "content": "现象：开机黑屏，提示找不到引导程序或无法加载操作系统。\n原因：病毒木马破坏、错误的分区操作、磁盘读写错误损毁 MBR 引导记录。\n排查：用 WinPE/Linux 启动盘确认磁盘数据本身可读，排除硬盘整体损坏。\n解决：重建引导（Windows 用 bootrec /fixmbr 与 /fixboot，Linux 重装 grub）；日常保留 MBR 扇区备份可实现分钟级恢复。",
+    "tags": ["服务器", "MBR", "引导", "黑屏"]
+  },
+  {
+    "doc_id": "kb-srv-0006",
+    "source_type": "troubleshooting",
+    "category": "服务器运维",
+    "title": "忘记 Linux root 密码（单用户模式重置）",
+    "content": "现象：root 密码遗失，无法登录管理服务器。\n思路：借 GRUB 进入单用户模式——类似 Windows 安全模式，仅启动基础服务、不启网络。\n步骤：1) 启动菜单选中 kernel 行按 e 编辑，行尾追加 single；2) 按 b 引导进入 sh 命令行；3) 执行 passwd 按提示输入两次新密码；4) init 3 回多用户模式验证。注意：操作前确认是否有审计登记要求。",
+    "tags": ["服务器", "Linux", "root密码", "单用户模式"]
+  },
+  {
+    "doc_id": "kb-srv-0007",
+    "source_type": "troubleshooting",
+    "category": "服务器运维",
+    "title": "RAID 阵列告警硬盘故障的处置边界",
+    "content": "现象：服务器告警 RAID 阵列某块盘 Failed/Degraded。\n原则：RAID1/RAID5 单盘故障换新盘重建即可、数据无损；多块盘同时异常时风险极高，盲目操作会放大损失。\n排查：1) 记录故障盘槽位与序列号；2) 确认阵列卡状态与剩余盘健康度；3) 数据极重要且多盘异常时停止一切写操作。\n解决：单盘热插拔更换后等待重建完成再处理下一块；数据无价时交专业恢复机构。",
+    "tags": ["服务器", "RAID", "硬盘更换", "数据安全"]
+  },
+  {
+    "doc_id": "kb-srv-0008",
+    "source_type": "troubleshooting",
+    "category": "服务器运维",
+    "title": "服务器频繁死机，进 BIOS 发现电源电压异常",
+    "content": "现象：服务器一两天死机一次，重启后恢复正常，系统日志无软件异常，机房偶闻蜂鸣声。\n真实案例：电源模块老化导致 12V 输出高达 16V 触发高压报警——输出不稳还会连带损伤其他部件。\n排查：进 BIOS 或带外管理查看电压读数；有冗余电源的可逐个拔出观察拔掉哪一块后报警消失。\n解决：定位故障电源直接更换；无冗余配置的停机换新。案例中拔下故障电源后服务器立即恢复稳定。",
+    "tags": ["服务器", "电源模块", "死机", "电压异常"]
+  }
+]

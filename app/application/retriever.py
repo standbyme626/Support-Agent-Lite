@@ -20,6 +20,11 @@ _CJK = r"\u4e00-\u9fff\u3400-\u4dbf"
 _ASCII_TERM = re.compile(r"[a-z0-9]+")
 _CJK_TERM = re.compile(rf"[{_CJK}]")
 
+# Interrogative function-word bigrams carry no topic signal; letting them
+# match lets chit-chat queries ("今天天气怎么样") collide with unrelated
+# entries whose titles contain question phrasing.
+_QUESTION_STOPWORDS = frozenset({"怎么", "什么", "么样", "如何", "为什么", "咋么", "多少"})
+
 
 def tokenize(text: str) -> set[str]:
     """ASCII words + CJK bigrams. Single CJK chars are excluded: they
@@ -90,12 +95,14 @@ class Retriever:
         top_k: int = 3,
         min_score: float = 0.25,
         min_query_terms: int = 2,
+        min_matched_terms: int = 2,
     ) -> RAGAnswer | None:
         """Return a grounded answer, or None when confidence is too low.
 
         No-answer protection (invariant #7): the top hit must clear a
-        score threshold and the query must carry enough signal, otherwise
-        None and the workflow replies with an explicit no-answer text.
+        score threshold, carry enough query signal, AND match at least
+        two distinct terms — a single common-word collision (e.g. 天气
+        inside a hardware entry) must never ground an unrelated query.
         """
         terms = self._tokenize(query)
         if len(terms) < min_query_terms:
@@ -105,6 +112,10 @@ class Retriever:
             return None
         best = hits[0]
         if best.score < min_score:
+            return None
+        haystack = self._haystack(best.document)
+        matched_count = sum(1 for term in terms if term in haystack)
+        if matched_count < min_matched_terms:
             return None
         text = self._format_answer(best)
         return RAGAnswer(text=text, hits=hits)
@@ -131,7 +142,7 @@ class Retriever:
 
     @staticmethod
     def _tokenize(text: str) -> set[str]:
-        return tokenize(text)
+        return tokenize(text) - _QUESTION_STOPWORDS
 
     def _compute_idf(self) -> dict[str, float]:
         """Document-frequency weights: distinctive terms dominate scoring."""

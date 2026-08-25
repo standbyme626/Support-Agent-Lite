@@ -8,7 +8,8 @@
       "support",
       "维修队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-002",
@@ -19,7 +20,8 @@
       "complaint",
       "值班负责人",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-003",
@@ -30,7 +32,8 @@
       "billing",
       "财务队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-004",
@@ -41,7 +44,8 @@
       "handoff",
       "人工客服",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-005",
@@ -52,7 +56,8 @@
       "incident",
       "oncall",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-006",
@@ -63,7 +68,8 @@
       "approval",
       "内控队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-007",
@@ -74,7 +80,8 @@
       "support",
       "维修队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-008",
@@ -85,7 +92,8 @@
       "complaint",
       "值班负责人",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-009",
@@ -96,7 +104,8 @@
       "billing",
       "财务队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-010",
@@ -107,7 +116,8 @@
       "handoff",
       "人工客服",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-011",
@@ -118,7 +128,8 @@
       "incident",
       "oncall",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-012",
@@ -129,7 +140,8 @@
       "approval",
       "内控队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-013",
@@ -140,7 +152,8 @@
       "support",
       "维修队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-014",
@@ -151,7 +164,8 @@
       "complaint",
       "值班负责人",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-015",
@@ -162,7 +176,8 @@
       "billing",
       "财务队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-016",
@@ -173,7 +188,8 @@
       "handoff",
       "人工客服",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-017",
@@ -184,7 +200,8 @@
       "incident",
       "oncall",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-018",
@@ -195,7 +212,8 @@
       "approval",
       "内控队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-019",
@@ -206,7 +224,8 @@
       "support",
       "维修队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-020",
@@ -217,7 +236,8 @@
       "complaint",
       "值班负责人",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-021",
@@ -228,7 +248,8 @@
       "billing",
       "财务队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-022",
@@ -239,7 +260,8 @@
       "handoff",
       "人工客服",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-023",
@@ -250,7 +272,8 @@
       "incident",
       "oncall",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-024",
@@ -261,7 +284,8 @@
       "approval",
       "内控队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-025",
@@ -272,7 +296,8 @@
       "support",
       "维修队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-026",
@@ -283,7 +308,8 @@
       "complaint",
       "值班负责人",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-027",
@@ -294,7 +320,8 @@
       "billing",
       "财务队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-028",
@@ -305,7 +332,8 @@
       "handoff",
       "人工客服",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-029",
@@ -316,7 +344,8 @@
       "incident",
       "oncall",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-030",
@@ -327,7 +356,8 @@
       "approval",
       "内控队列",
       "SOP"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-it-001",
@@ -339,7 +369,8 @@
       "维修",
       "电脑",
       "现场"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-it-002",
@@ -351,7 +382,8 @@
       "网络",
       "应急",
       "故障"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-it-003",
@@ -363,7 +395,8 @@
       "安全",
       "应急",
       "事件"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-it-004",
@@ -375,7 +408,8 @@
       "入职",
       "配置",
       "新员工"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-it-005",
@@ -387,7 +421,8 @@
       "采购",
       "报废",
       "设备"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-it-006",
@@ -399,7 +434,8 @@
       "变更",
       "发布",
       "系统"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-it-007",
@@ -411,7 +447,8 @@
       "备份",
       "恢复",
       "数据"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop-it-008",
@@ -423,7 +460,8 @@
       "会议室",
       "巡检",
       "维护"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop_proj_0001",
@@ -434,7 +472,8 @@
       "sop",
       "ops",
       "healthcheck"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop_proj_0002",
@@ -445,7 +484,8 @@
       "sop",
       "web_console",
       "runbook"
-    ]
+    ],
+    "category": "运维流程"
   },
   {
     "doc_id": "sop_proj_0003",
@@ -456,6 +496,7 @@
       "sop",
       "qa",
       "kb"
-    ]
+    ],
+    "category": "运维流程"
   }
 ]
