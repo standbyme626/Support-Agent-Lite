@@ -159,7 +159,11 @@ class SupportWorkflow:
         parser: CommandParser | None = None,
         session_ctx: SessionTicketContextRepository | None = None,
         policy: PolicyValidator | None = None,
+        notifications=None,
     ) -> None:
+        # notifications: NotificationService (optional) — lets deterministic
+        # outcomes (chitchat) emit outbound records; None keeps them silent.
+        self._notifications = notifications
         self._router = router
         self._retriever = retriever
         self._tickets = ticket_service
@@ -476,9 +480,28 @@ class SupportWorkflow:
 
         Never creates a ticket — the B-fix for 「你好你是谁」spawning
         handoff tickets. Deterministic, no LLM, no state change.
+        The reply MUST reach the user: deterministic outcomes bypass the
+        agent apply-phase, so the outbound record is enqueued here.
         """
+        reply = _chitchat_reply(envelope.text)
+        if self._notifications is not None:
+            from app.application.target_resolver import ResolvedTarget
+            from app.domain.notification import NotificationType, Visibility
+            from app.domain.outbound import DeliveryTarget, TargetKind
+
+            self._notifications.enqueue(
+                source_event_id=f"{envelope.trace_id}:chitchat",
+                notification_type=NotificationType.REACTIVE_REPLY,
+                visibility=Visibility.PUBLIC,
+                message=reply,
+                target=ResolvedTarget(
+                    DeliveryTarget(envelope.channel, TargetKind.CONVERSATION, envelope.conversation_id),
+                    "reactive_reply",
+                ),
+                trace_id=envelope.trace_id,
+            )
         return self._deterministic(
-            envelope, user, session, WorkflowKind.CHITCHAT, _chitchat_reply(envelope.text)
+            envelope, user, session, WorkflowKind.CHITCHAT, reply
         )
 
     def _prepare_other(

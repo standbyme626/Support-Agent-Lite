@@ -298,6 +298,7 @@ def build_workflow(
         parser=CommandParser(),
         session_ctx=SessionTicketContextRepository(conn),
         policy=PolicyValidator(store),
+        notifications=core["notifications"],
     )
 
 
