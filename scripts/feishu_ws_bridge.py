@@ -69,8 +69,10 @@ def main() -> None:
     event_handler = (
         lark.EventDispatcherHandler.builder("", "")
         .register_p2_im_message_receive_v1(on_message_receive)
-        .register_p1_customized_event("im.message.message_read_v1", on_ignored_event)
-        .register_p1_customized_event("im.chat.access_event.bot_p2p_chat_entered_v1", on_ignored_event)
+        # p2 (schema 2.0) no-op handlers: subscribed events we don't act on.
+        # Without these the SDK logs "processor not found" ERRORs per event.
+        .register_p2_im_message_message_read_v1(on_ignored_event)
+        .register_p2_im_chat_access_event_bot_p2p_chat_entered_v1(on_ignored_event)
         .build()
     )
 

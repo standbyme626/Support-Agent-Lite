@@ -2,14 +2,17 @@
 
 Hermeticity (V2.1, AC-A18): the default test run must NEVER touch the
 real network, even when the shell/.env exports REAL_CHANNEL_NETWORK=true.
-Real-network tests must opt in explicitly with RUN_REAL_CHANNEL_TESTS=1.
+This is enforced UNCONDITIONALLY here (before any app import can load
+.env): production credentials leaking into a test run must be impossible.
+A test that genuinely needs the real network opts in by setting
+os.environ["REAL_CHANNEL_NETWORK"]="true" inside its own body (and is
+responsible for cleaning up after itself).
 """
 from __future__ import annotations
 
 import os
 
-if not os.environ.get("RUN_REAL_CHANNEL_TESTS"):
-    os.environ["REAL_CHANNEL_NETWORK"] = "false"
+os.environ["REAL_CHANNEL_NETWORK"] = "false"
 # Hermeticity: vector/rerank backends are external services — tests always
 # run keyword-only unless a test explicitly opts in.
 os.environ["KB_VECTOR_ENABLED"] = "false"

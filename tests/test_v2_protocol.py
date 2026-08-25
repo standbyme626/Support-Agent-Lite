@@ -120,6 +120,9 @@ def test_ac26_feishu_encrypted_event_roundtrip() -> None:
 
 
 def test_ac27_feishu_dm_outbound_contract() -> None:
+    import os as _os
+
+    _os.environ["REAL_CHANNEL_NETWORK"] = "false"  # contract tests: hermetic always
     transport = HttpTransport()
     client = FeishuOutboundClient(transport=transport)
     message = OutboundMessage(
@@ -143,6 +146,9 @@ def test_ac27_feishu_dm_outbound_contract() -> None:
 
 
 def test_ac27_feishu_group_outbound_contract() -> None:
+    import os as _os
+
+    _os.environ["REAL_CHANNEL_NETWORK"] = "false"  # contract tests: hermetic always
     transport = HttpTransport()
     client = FeishuOutboundClient(transport=transport)
     message = OutboundMessage(
@@ -234,6 +240,9 @@ def test_ac28_wecom_encrypted_message_callback_parse() -> None:
 
 
 def test_ac28_wecom_outbound_dm_contract() -> None:
+    import os as _os
+
+    _os.environ["REAL_CHANNEL_NETWORK"] = "false"  # contract tests: hermetic always
     transport = HttpTransport()
     client = WeComOutboundClient(transport=transport)
     message = OutboundMessage(
@@ -253,6 +262,9 @@ def test_ac28_wecom_outbound_dm_contract() -> None:
 
 
 def test_ac28_wecom_outbound_group_contract() -> None:
+    import os as _os
+
+    _os.environ["REAL_CHANNEL_NETWORK"] = "false"  # contract tests: hermetic always
     transport = HttpTransport()
     client = WeComOutboundClient(transport=transport)
     message = OutboundMessage(

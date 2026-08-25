@@ -139,7 +139,9 @@ def test_ac24_notification_dedupe(app_ctx) -> None:
 # --- Outbox survives simulated delivery failure ---
 
 
-def test_outbox_survives_delivery_failure(app_ctx) -> None:
+def test_outbox_survives_delivery_failure(app_ctx, monkeypatch) -> None:
+    # hermetic regardless of RUN_REAL_CHANNEL_TESTS / .env leakage
+    monkeypatch.setenv("REAL_CHANNEL_NETWORK", "false")
     client, store = app_ctx.client, app_ctx.store
     app_ctx.transport.fail_next("network_down")  # first delivery fails
 
@@ -149,7 +151,11 @@ def test_outbox_survives_delivery_failure(app_ctx) -> None:
 
     from app.main import build_ops
 
-    ops = build_ops(app_ctx.conn, app_ctx.store, None)
+    # retry must use the SAME recording transport (hermetic under
+    # RUN_REAL_CHANNEL_TESTS too — never a real network client)
+    from tests.conftest import _outbound_clients
+
+    ops = build_ops(app_ctx.conn, app_ctx.store, _outbound_clients(app_ctx.transport))
     from app.infrastructure.repositories import NotificationOutboxRepository
 
     outbox = NotificationOutboxRepository(app_ctx.conn)
