@@ -32,6 +32,105 @@ ALLOWED_TOOLS = frozenset({
     "ask_stats",
 })
 
+# Function-Calling schemas (OpenAI tools format) for the read-only surface.
+# Single source of truth for what the model may call; the port's runtime
+# whitelist above stays the enforcement point — schemas only describe.
+TOOL_JSON_SCHEMAS: list[dict] = [
+    {
+        "name": "get_ticket_history",
+        "description": "查询工单完整事件历史与最近会话内容。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticket_id": {"type": "string", "description": "工单号，如 T0001"},
+            },
+            "required": ["ticket_id"],
+        },
+    },
+    {
+        "name": "search_knowledge",
+        "description": "在企业知识库中检索（关键词+向量混合检索）。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "检索查询语句"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "recall_memory",
+        "description": "召回该用户的历史长期记忆。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "记忆检索语句"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "get_allowed_actions",
+        "description": "查询指定角色在工单当前状态下允许执行的动作。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ticket_id": {"type": "string", "description": "工单号"},
+                "actor_role": {"type": "string", "description": "requester 或 operator"},
+            },
+            "required": ["ticket_id", "actor_role"],
+        },
+    },
+    {
+        "name": "contact_lookup",
+        "description": "企业通讯录精确查询：按姓名/工号(E0001)/分机/部门查找联系人。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "姓名、工号、分机号或部门名"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "asset_lookup",
+        "description": "IT 资产台账查询：按资产号(AST-0000)/型号/类型/领用人查找设备。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "资产编号、型号、类型或领用人姓名"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "ticket_stats",
+        "description": "受限工单分组统计：按 status/queue/category/priority 计数。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "group_by": {
+                    "type": "string",
+                    "enum": ["status", "queue", "category", "priority"],
+                    "description": "统计维度",
+                },
+            },
+            "required": ["group_by"],
+        },
+    },
+    {
+        "name": "ask_stats",
+        "description": "问数子代理：把自然语言统计问题转为受限口径并返回带口径说明的计数。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "自然语言统计问题"},
+            },
+            "required": ["question"],
+        },
+    },
+]
+
 
 class AgentToolDenied(RuntimeError):
     """Raised when the model asks for a tool outside the whitelist."""
