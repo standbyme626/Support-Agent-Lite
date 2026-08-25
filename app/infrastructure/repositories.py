@@ -520,6 +520,19 @@ class TicketStore(SqliteRepository):
         row = self._conn.execute("SELECT * FROM tickets WHERE id = ?", (ticket_id,)).fetchone()
         return self._row_to_ticket(row) if row else None
 
+    def stats_grouped(self, column: str) -> dict[str, int]:
+        """Constrained read-only aggregation for the ticket_stats tool.
+
+        `column` must be one of a fixed whitelist (validated by the caller);
+        values are interpolated only after that check — never user input.
+        """
+        if column not in ("status", "queue", "category", "priority"):
+            raise ValueError(f"unsupported stats column: {column}")
+        rows = self._conn.execute(
+            f"SELECT {column} AS k, COUNT(*) AS n FROM tickets GROUP BY {column}"  # noqa: S608 - column whitelisted above
+        ).fetchall()
+        return {str(r["k"]): int(r["n"]) for r in rows}
+
     def list_by_user(self, user_id: str) -> list[Ticket]:
         rows = self._conn.execute(
             "SELECT * FROM tickets WHERE user_id = ? ORDER BY created_at", (user_id,)

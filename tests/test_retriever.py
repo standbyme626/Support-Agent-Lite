@@ -14,7 +14,7 @@ SEED_DIR = Path(__file__).resolve().parent.parent / "seed" / "faq"
 def test_loads_faq_documents() -> None:
     retriever = Retriever(SEED_DIR)
     assert len(retriever.documents) >= 10
-    allowed = {"faq", "troubleshooting", "sop", "methodology"}
+    allowed = {"faq", "troubleshooting", "sop", "methodology", "dataset_zh"}
     assert all(doc.source_type in allowed for doc in retriever.documents)
 
 

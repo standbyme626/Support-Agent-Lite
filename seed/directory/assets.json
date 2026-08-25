@@ -1,0 +1,246 @@
+{
+  "fictitious": true,
+  "note": "纯虚构 IT 资产台账",
+  "items": [
+    {
+      "asset_id": "AST-0001",
+      "type": "网络设备",
+      "model": "TP-Link AP",
+      "assigned_to": "E0004",
+      "purchase_date": "2024-07",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0002",
+      "type": "打印机",
+      "model": "Canon iR2625",
+      "assigned_to": "E0006",
+      "purchase_date": "2024-01",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0003",
+      "type": "其他",
+      "model": "投影仪Epson CB-X06",
+      "assigned_to": "E0024",
+      "purchase_date": "2025-05",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0004",
+      "type": "打印机",
+      "model": "HP LaserJet M405",
+      "assigned_to": "E0025",
+      "purchase_date": "2024-09",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0005",
+      "type": "网络设备",
+      "model": "华为S5735交换机",
+      "assigned_to": "E0030",
+      "purchase_date": "2024-11",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0006",
+      "type": "笔记本电脑",
+      "model": "Dell Latitude 5440",
+      "assigned_to": "E0010",
+      "purchase_date": "2025-05",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0007",
+      "type": "笔记本电脑",
+      "model": "ThinkPad T14",
+      "assigned_to": "E0020",
+      "purchase_date": "2024-03",
+      "status": "维修中"
+    },
+    {
+      "asset_id": "AST-0008",
+      "type": "显示器",
+      "model": "Dell U2422H",
+      "assigned_to": "E0012",
+      "purchase_date": "2024-09",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0009",
+      "type": "笔记本电脑",
+      "model": "Dell Latitude 5440",
+      "assigned_to": "E0025",
+      "purchase_date": "2025-01",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0010",
+      "type": "网络设备",
+      "model": "TP-Link AP",
+      "assigned_to": "E0020",
+      "purchase_date": "2024-08",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0011",
+      "type": "显示器",
+      "model": "Dell U2422H",
+      "assigned_to": "E0001",
+      "purchase_date": "2024-06",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0012",
+      "type": "其他",
+      "model": "投影仪Epson CB-X06",
+      "assigned_to": "E0029",
+      "purchase_date": "2025-02",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0013",
+      "type": "笔记本电脑",
+      "model": "ThinkPad T14",
+      "assigned_to": "E0002",
+      "purchase_date": "2024-10",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0014",
+      "type": "打印机",
+      "model": "HP LaserJet M405",
+      "assigned_to": "E0003",
+      "purchase_date": "2024-12",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0015",
+      "type": "笔记本电脑",
+      "model": "ThinkPad T14",
+      "assigned_to": "E0016",
+      "purchase_date": "2025-05",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0016",
+      "type": "其他",
+      "model": "罗技MX Keys",
+      "assigned_to": "E0025",
+      "purchase_date": "2024-03",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0017",
+      "type": "笔记本电脑",
+      "model": "MacBook Pro 14",
+      "assigned_to": "E0022",
+      "purchase_date": "2024-09",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0018",
+      "type": "网络设备",
+      "model": "TP-Link AP",
+      "assigned_to": "E0006",
+      "purchase_date": "2025-05",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0019",
+      "type": "笔记本电脑",
+      "model": "Dell Latitude 5440",
+      "assigned_to": "E0028",
+      "purchase_date": "2024-07",
+      "status": "维修中"
+    },
+    {
+      "asset_id": "AST-0020",
+      "type": "笔记本电脑",
+      "model": "Dell Latitude 5440",
+      "assigned_to": "E0007",
+      "purchase_date": "2024-12",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0021",
+      "type": "笔记本电脑",
+      "model": "ThinkPad T14",
+      "assigned_to": "E0023",
+      "purchase_date": "2025-06",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0022",
+      "type": "显示器",
+      "model": "AOC Q27",
+      "assigned_to": "E0010",
+      "purchase_date": "2024-11",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0023",
+      "type": "显示器",
+      "model": "AOC Q27",
+      "assigned_to": "E0021",
+      "purchase_date": "2024-08",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0024",
+      "type": "笔记本电脑",
+      "model": "Dell Latitude 5440",
+      "assigned_to": "E0029",
+      "purchase_date": "2025-04",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0025",
+      "type": "笔记本电脑",
+      "model": "ThinkPad T14",
+      "assigned_to": "E0004",
+      "purchase_date": "2024-04",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0026",
+      "type": "笔记本电脑",
+      "model": "MacBook Pro 14",
+      "assigned_to": "E0003",
+      "purchase_date": "2024-01",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0027",
+      "type": "显示器",
+      "model": "Dell U2422H",
+      "assigned_to": "E0019",
+      "purchase_date": "2025-05",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0028",
+      "type": "其他",
+      "model": "罗技MX Keys",
+      "assigned_to": "E0008",
+      "purchase_date": "2024-02",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0029",
+      "type": "显示器",
+      "model": "Dell U2422H",
+      "assigned_to": "E0023",
+      "purchase_date": "2024-04",
+      "status": "在用"
+    },
+    {
+      "asset_id": "AST-0030",
+      "type": "打印机",
+      "model": "HP LaserJet M405",
+      "assigned_to": "E0003",
+      "purchase_date": "2025-03",
+      "status": "在用"
+    }
+  ]
+}

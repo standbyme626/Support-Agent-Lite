@@ -141,6 +141,14 @@ def build_memory(conn: Any, store: TicketStore) -> MemoryService:
     return MemoryService(store, MemoryRepository(conn))
 
 
+def _build_directory(seed_dir: str | Path):
+    from app.infrastructure.directory import DirectoryService
+
+    base = Path(seed_dir)
+    directory_dir = base.parent / "directory" if base.name == "faq" else base / "directory"
+    return DirectoryService(directory_dir)
+
+
 def build_core(conn: Any, store: TicketStore, outbound_clients: dict | None = None) -> dict[str, Any]:
     """Shared V2 services (roles/conversations/targets/outbox/actions)."""
     users = UserRepository(conn)
@@ -209,7 +217,8 @@ def build_workflow(
     core = core or build_core(conn, store)
     retriever = Retriever(seed_dir)
     memory = build_memory(conn, store)
-    tools = AgentToolPort(store, MessageRepository(conn), retriever, memory)
+    directory = _build_directory(seed_dir)
+    tools = AgentToolPort(store, MessageRepository(conn), retriever, memory, directory=directory)
     return SupportWorkflow(
         router=IntentRouter(),
         retriever=retriever,

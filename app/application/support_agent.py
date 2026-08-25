@@ -122,7 +122,14 @@ class SupportAgent:
 
     # --- public API ---
 
-    def run(self, context: AgentContext, intent: str = INTENT_SUPPORT) -> AgentRunResult:
+    def run(
+        self,
+        context: AgentContext,
+        intent: str = INTENT_SUPPORT,
+        *,
+        allowed_tools: frozenset[str] | None = None,
+        extra_instructions: str = "",
+    ) -> AgentRunResult:
         started = time.monotonic()
         run_id = f"agr_{uuid4().hex[:12]}"
         meta = self._prompts.meta("agent_decision")
@@ -132,6 +139,7 @@ class SupportAgent:
         fallback_reason = ""
         error_type: str | None = None
         steps = 0
+        whitelist = allowed_tools if allowed_tools is not None else ALLOWED_TOOLS
 
         while steps < MAX_AGENT_STEPS:
             steps += 1
@@ -139,7 +147,9 @@ class SupportAgent:
                 decision = self._fallback_decision(context, intent)
                 fallback_reason = "no_llm"
                 break
-            prompt = self._render(context, intent, observations)
+            prompt = self._render(context, intent, observations) + (
+                f"\n{extra_instructions}" if extra_instructions else ""
+            )
             try:
                 raw = self._llm.complete(system=_SYSTEM_PROMPT, user=prompt)
                 parsed = self._prompts.extract_json(raw)
@@ -169,12 +179,16 @@ class SupportAgent:
                 args = tool_request.get("args")
                 if not isinstance(args, dict):
                     args = {}
-                if tool_name not in ALLOWED_TOOLS:
+                if tool_name not in whitelist:
                     tool_calls.append(ToolCall(tool=tool_name, args=dict(args), observation="denied", ok=False))
                     break  # deny and keep the (validated) decision
                 try:
                     result = self._tools.call(
-                        tool_name, args, user_id=context.user_id, session_id=context.session_id
+                        tool_name,
+                        args,
+                        user_id=context.user_id,
+                        session_id=context.session_id,
+                        allowed=whitelist,
                     )
                 except AgentToolDenied as exc:  # pragma: no cover - whitelist guards above
                     tool_calls.append(ToolCall(tool=tool_name, args=dict(args), observation=str(exc), ok=False))

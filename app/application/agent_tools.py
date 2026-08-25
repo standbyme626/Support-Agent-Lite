@@ -14,6 +14,7 @@ from app.application.memory_service import MemoryService
 from app.application.retriever import Retriever
 from app.domain.role import UserRole
 from app.domain.ticket import TicketStatus
+from app.infrastructure.directory import DirectoryService
 from app.infrastructure.repositories import MessageRepository, TicketStore
 
 MAX_TOOL_CALLS = 2
@@ -24,6 +25,9 @@ ALLOWED_TOOLS = frozenset({
     "search_knowledge",
     "recall_memory",
     "get_allowed_actions",
+    "contact_lookup",
+    "asset_lookup",
+    "ticket_stats",
 })
 
 
@@ -48,14 +52,25 @@ class AgentToolPort:
         messages: MessageRepository,
         retriever: Retriever,
         memory: MemoryService,
+        directory: DirectoryService | None = None,
     ) -> None:
         self._tickets = tickets
         self._messages = messages
         self._retriever = retriever
         self._memory = memory
+        self._directory = directory
 
-    def call(self, tool: str, args: dict, *, user_id: str, session_id: str) -> ToolCall:
-        if tool not in ALLOWED_TOOLS:
+    def call(
+        self,
+        tool: str,
+        args: dict,
+        *,
+        user_id: str,
+        session_id: str,
+        allowed: frozenset[str] | None = None,
+    ) -> ToolCall:
+        whitelist = allowed if allowed is not None else ALLOWED_TOOLS
+        if tool not in ALLOWED_TOOLS or tool not in whitelist:
             raise AgentToolDenied(f"tool not allowed: {tool}")
         if tool == "get_ticket_history":
             observation = self._ticket_history(str(args.get("ticket_id") or ""), session_id)
@@ -65,6 +80,12 @@ class AgentToolPort:
             observation = self._recall_memory(str(args.get("query") or ""), user_id)
         elif tool == "get_allowed_actions":
             observation = self._allowed_actions(str(args.get("ticket_id") or ""), str(args.get("actor_role") or ""))
+        elif tool == "contact_lookup":
+            observation = self._contact_lookup(str(args.get("query") or ""))
+        elif tool == "asset_lookup":
+            observation = self._asset_lookup(str(args.get("query") or ""))
+        elif tool == "ticket_stats":
+            observation = self._ticket_stats(str(args.get("group_by") or "status"))
         else:  # pragma: no cover - guarded by ALLOWED_TOOLS
             raise AgentToolDenied(f"tool not allowed: {tool}")
         return ToolCall(tool=tool, args=dict(args), observation=observation)
@@ -109,6 +130,26 @@ class AgentToolPort:
         return "\n".join(
             f"{hit.memory.id}（score={round(hit.score, 3)}）：{hit.memory.fact}" for hit in hits
         )
+
+    def _contact_lookup(self, query: str) -> str:
+        if self._directory is None:
+            return "通讯录服务不可用"
+        return self._directory.lookup_contact(query, viewer_role="requester")
+
+    def _asset_lookup(self, query: str) -> str:
+        if self._directory is None:
+            return "资产台账服务不可用"
+        return self._directory.lookup_asset(query)
+
+    def _ticket_stats(self, group_by: str) -> str:
+        field_map = {"status": "status", "queue": "queue", "category": "category", "priority": "priority"}
+        col = field_map.get(group_by)
+        if col is None:
+            return f"不支持的统计维度：{group_by}（可选 status/queue/category/priority）"
+        rows = self._tickets.stats_grouped(col)
+        total = sum(rows.values())
+        detail = "；".join(f"{k or '未设置'}={v}" for k, v in sorted(rows.items()))
+        return f"工单统计（按{group_by}，共 {total} 单）：{detail}"
 
     def _allowed_actions(self, ticket_id: str, actor_role: str) -> str:
         ticket = self._tickets.get(ticket_id)

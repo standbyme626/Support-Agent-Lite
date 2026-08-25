@@ -1,0 +1,276 @@
+{
+  "fictitious": true,
+  "note": "纯虚构数据，用于演示企业通讯录精确检索",
+  "items": [
+    {
+      "employee_id": "E0001",
+      "name": "刘伟",
+      "dept": "运维部",
+      "extension": "8001",
+      "email": "emp0001@company.cn",
+      "phone": "13846913810",
+      "location": "A栋305"
+    },
+    {
+      "employee_id": "E0002",
+      "name": "赵静",
+      "dept": "运维部",
+      "extension": "8002",
+      "email": "emp0002@company.cn",
+      "phone": "13823756669",
+      "location": "C栋108"
+    },
+    {
+      "employee_id": "E0003",
+      "name": "高娜",
+      "dept": "运维部",
+      "extension": "8003",
+      "email": "emp0003@company.cn",
+      "phone": "13889254563",
+      "location": "B栋210"
+    },
+    {
+      "employee_id": "E0004",
+      "name": "王伟",
+      "dept": "运维部",
+      "extension": "8004",
+      "email": "emp0004@company.cn",
+      "phone": "13822575562",
+      "location": "A栋305"
+    },
+    {
+      "employee_id": "E0005",
+      "name": "赵平",
+      "dept": "运维部",
+      "extension": "8005",
+      "email": "emp0005@company.cn",
+      "phone": "13890801586",
+      "location": "A栋301"
+    },
+    {
+      "employee_id": "E0006",
+      "name": "高军",
+      "dept": "运维部",
+      "extension": "8006",
+      "email": "emp0006@company.cn",
+      "phone": "13897226012",
+      "location": "C栋108"
+    },
+    {
+      "employee_id": "E0007",
+      "name": "高超",
+      "dept": "运维部",
+      "extension": "8007",
+      "email": "emp0007@company.cn",
+      "phone": "13839587039",
+      "location": "B栋210"
+    },
+    {
+      "employee_id": "E0008",
+      "name": "林勇",
+      "dept": "运维部",
+      "extension": "8008",
+      "email": "emp0008@company.cn",
+      "phone": "13810872248",
+      "location": "A栋305"
+    },
+    {
+      "employee_id": "E0009",
+      "name": "朱杰",
+      "dept": "研发部",
+      "extension": "8009",
+      "email": "emp0009@company.cn",
+      "phone": "13847295260",
+      "location": "A栋305"
+    },
+    {
+      "employee_id": "E0010",
+      "name": "黄杰",
+      "dept": "研发部",
+      "extension": "8010",
+      "email": "emp0010@company.cn",
+      "phone": "13823718431",
+      "location": "A栋301"
+    },
+    {
+      "employee_id": "E0011",
+      "name": "马敏",
+      "dept": "研发部",
+      "extension": "8011",
+      "email": "emp0011@company.cn",
+      "phone": "13858181396",
+      "location": "B栋201"
+    },
+    {
+      "employee_id": "E0012",
+      "name": "郑勇",
+      "dept": "研发部",
+      "extension": "8012",
+      "email": "emp0012@company.cn",
+      "phone": "13815831819",
+      "location": "C栋108"
+    },
+    {
+      "employee_id": "E0013",
+      "name": "胡刚",
+      "dept": "研发部",
+      "extension": "8013",
+      "email": "emp0013@company.cn",
+      "phone": "13826753883",
+      "location": "B栋210"
+    },
+    {
+      "employee_id": "E0014",
+      "name": "李刚",
+      "dept": "研发部",
+      "extension": "8014",
+      "email": "emp0014@company.cn",
+      "phone": "13849349722",
+      "location": "C栋108"
+    },
+    {
+      "employee_id": "E0015",
+      "name": "郑涛",
+      "dept": "研发部",
+      "extension": "8015",
+      "email": "emp0015@company.cn",
+      "phone": "13887490893",
+      "location": "A栋305"
+    },
+    {
+      "employee_id": "E0016",
+      "name": "李芳",
+      "dept": "研发部",
+      "extension": "8016",
+      "email": "emp0016@company.cn",
+      "phone": "13898753260",
+      "location": "A栋305"
+    },
+    {
+      "employee_id": "E0017",
+      "name": "吴娜",
+      "dept": "财务部",
+      "extension": "8017",
+      "email": "emp0017@company.cn",
+      "phone": "13841244663",
+      "location": "A栋301"
+    },
+    {
+      "employee_id": "E0018",
+      "name": "马勇",
+      "dept": "财务部",
+      "extension": "8018",
+      "email": "emp0018@company.cn",
+      "phone": "13870855700",
+      "location": "C栋108"
+    },
+    {
+      "employee_id": "E0019",
+      "name": "孙磊",
+      "dept": "财务部",
+      "extension": "8019",
+      "email": "emp0019@company.cn",
+      "phone": "13859684848",
+      "location": "B栋201"
+    },
+    {
+      "employee_id": "E0020",
+      "name": "黄子豪",
+      "dept": "财务部",
+      "extension": "8020",
+      "email": "emp0020@company.cn",
+      "phone": "13845833156",
+      "location": "C栋108"
+    },
+    {
+      "employee_id": "E0021",
+      "name": "李文轩",
+      "dept": "财务部",
+      "extension": "8021",
+      "email": "emp0021@company.cn",
+      "phone": "13895225343",
+      "location": "A栋305"
+    },
+    {
+      "employee_id": "E0022",
+      "name": "高梦琪",
+      "dept": "人力资源部",
+      "extension": "8022",
+      "email": "emp0022@company.cn",
+      "phone": "13842857966",
+      "location": "A栋305"
+    },
+    {
+      "employee_id": "E0023",
+      "name": "胡明",
+      "dept": "人力资源部",
+      "extension": "8023",
+      "email": "emp0023@company.cn",
+      "phone": "13846231783",
+      "location": "C栋108"
+    },
+    {
+      "employee_id": "E0024",
+      "name": "高洋",
+      "dept": "人力资源部",
+      "extension": "8024",
+      "email": "emp0024@company.cn",
+      "phone": "13853524491",
+      "location": "A栋301"
+    },
+    {
+      "employee_id": "E0025",
+      "name": "赵芳",
+      "dept": "人力资源部",
+      "extension": "8025",
+      "email": "emp0025@company.cn",
+      "phone": "13852339391",
+      "location": "B栋210"
+    },
+    {
+      "employee_id": "E0026",
+      "name": "周娜",
+      "dept": "人力资源部",
+      "extension": "8026",
+      "email": "emp0026@company.cn",
+      "phone": "13838317637",
+      "location": "C栋102"
+    },
+    {
+      "employee_id": "E0027",
+      "name": "徐军",
+      "dept": "行政部",
+      "extension": "8027",
+      "email": "emp0027@company.cn",
+      "phone": "13897971488",
+      "location": "B栋210"
+    },
+    {
+      "employee_id": "E0028",
+      "name": "马雨欣",
+      "dept": "行政部",
+      "extension": "8028",
+      "email": "emp0028@company.cn",
+      "phone": "13871586053",
+      "location": "A栋305"
+    },
+    {
+      "employee_id": "E0029",
+      "name": "周静",
+      "dept": "行政部",
+      "extension": "8029",
+      "email": "emp0029@company.cn",
+      "phone": "13843101783",
+      "location": "C栋108"
+    },
+    {
+      "employee_id": "E0030",
+      "name": "高刚",
+      "dept": "行政部",
+      "extension": "8030",
+      "email": "emp0030@company.cn",
+      "phone": "13845264581",
+      "location": "C栋108"
+    }
+  ]
+}

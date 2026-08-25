@@ -182,7 +182,49 @@ class SupportWorkflow:
         """Agent run between transactions — NO database write lock held."""
         if not prepared.needs_agent or prepared.context is None:
             raise RuntimeError("run_agent called for a non-agent prepared outcome")
-        return self._agent.run(prepared.context, intent=prepared.intent)
+        allowed, extra = self._tool_whitelist(prepared)
+        return self._agent.run(
+            prepared.context,
+            intent=prepared.intent,
+            allowed_tools=allowed,
+            extra_instructions=extra,
+        )
+
+    def _tool_whitelist(self, prepared: PreparedOutcome) -> tuple[frozenset[str], str]:
+        """Intent-driven tool whitelist assembly + L4 entity interception.
+
+        C9 router (升级计划 §7.2): each intent sees only the tools it needs;
+        precise-entity patterns (phone/id-card/工号/资产号) lock the run down
+        to entity lookups and inject a masking instruction.
+        """
+        from app.application.agent_tools import ALLOWED_TOOLS
+        from app.application.entity_guard import GUARD_INSTRUCTION, detect_entities
+
+        context = prepared.context
+        text = context.latest_user_text if context else ""
+        guard_kinds = detect_entities(text)
+        if guard_kinds:
+            return (
+                frozenset({"contact_lookup", "asset_lookup"}),
+                GUARD_INSTRUCTION,
+            )
+        base: dict[str, frozenset[str]] = {
+            INTENT_FAQ: frozenset({"search_knowledge", "recall_memory"}),
+            INTENT_NO_ANSWER: frozenset(),
+            INTENT_SUPPORT: frozenset({
+                "get_ticket_history",
+                "search_knowledge",
+                "recall_memory",
+                "get_allowed_actions",
+                "contact_lookup",
+                "asset_lookup",
+                "ticket_stats",
+            }),
+        }
+        allowed = base.get(prepared.intent)
+        if allowed is None:  # unknown/progress intents keep full read surface
+            return ALLOWED_TOOLS, ""
+        return allowed, ""
 
     def apply(
         self,
