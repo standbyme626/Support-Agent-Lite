@@ -97,7 +97,7 @@ flowchart LR
     subgraph Core["核心层(V1 已验证)"]
         ID["Canonical Identity<br/>渠道身份→规范用户"]
         CV["Conversation<br/>Type + Purpose"]
-        IR["Intent Router<br/>FAQ | Support | Progress"]
+        IR["Intent Router<br/>FAQ / Support / Progress"]
     end
     subgraph AgentCore["Agent 层(V2.1)"]
         CTX["AgentContext<br/>消息/角色/会话/工单/记忆/RAG"]
@@ -271,18 +271,26 @@ LLM 不可用 / 超时 / 非法 JSON / 枚举越界 / 超长回复 / 工具被�
 
 ### 路由决策流(每条消息)
 
-```mermaid
-flowchart TD
-    IN["用户输入"] --> IR["IntentRouter<br/>faq / support / progress / other"]
-    IR --> G{"EntityGuard 正则拦截<br/>手机号 / 身份证 / E0001 工号 / AST-0307 资产号"}
-    G -->|"命中"| LOCK["本轮锁死:<br/>只挂 contact_lookup + asset_lookup<br/>注入脱敏系统指令"]
-    G -->|"未命中"| ASM{"按意图装配白名单"}
-    ASM -->|"faq"| W1["search_knowledge + recall_memory"]
-    ASM -->|"support"| W2["全量只读 7 工具"]
-    ASM -->|"progress_query"| W3["history + actions + ask_stats"]
-    ASM -->|"no_answer / 闲聊"| W4["零检索面(转人工无需查库)"]
-    W1 & W2 & W3 --> AGT["SupportAgent<br/>白名单内自由选择 ≤2 次"]
-    LOCK --> AGT
+```text
+用户输入
+   │
+   ▼
+IntentRouter ──► faq / support / progress_query / other
+   │
+   ▼
+EntityGuard 正则拦截(手机号 / 身份证 / E0001 工号 / AST-0307 资产号)
+   │
+   ├─ 命中 ──► 本轮锁死:只挂 contact_lookup + asset_lookup
+   │           并注入「输出必须脱敏」系统指令 ─────────┐
+   │                                                │
+   └─ 未命中 ──► 按意图装配工具白名单:                  │
+        faq         → search_knowledge + recall_memory│
+        support     → 全量只读 7 工具                 │
+        progress    → history + actions + ask_stats  │
+        no_answer   → 零检索面(转人工无需查库)          │
+                      │                              │
+                      ▼                              │
+        SupportAgent(白名单内自由选择 ≤2 次)◄──────────┘
 ```
 
 ### L4 为什么不能走向量?
@@ -297,15 +305,27 @@ flowchart TD
 
 ### 检索流水线
 
-```mermaid
-flowchart LR
-    Q["用户 Query"] --> KW["TF-IDF 关键词路<br/>Retriever(419 条)"]
-    Q --> EM["Qwen3-Embedding-8B<br/>4096 维向量化"]
-    EM --> VS["VectorStore 检索<br/>numpy 默认 / Chroma 可选"]
-    KW --> FUS["RRF 融合<br/>(k=60 倒数排名)"]
-    VS --> FUS
-    FUS -->|"Top ~10 候选"| RRANK["Qwen3-Reranker-8B<br/>交叉编码器重排"]
-    RRANK --> OUT["Top-K RetrievalHit<br/>(rerank 分数 0~1)"]
+```text
+                用户 Query
+                    │
+          ┌─────────┴──────────┐
+          ▼                    ▼
+   TF-IDF 关键词路        Qwen3-Embedding-8B
+   Retriever(419 条)      4096 维向量化
+          │                    │
+          │                    ▼
+          │             VectorStore 检索
+          │           numpy 默认 / Chroma 可选
+          ▼                    ▼
+       RRF 融合(k=60 倒数排名)
+                    │
+                    ▼ Top ~10 候选
+       Qwen3-Reranker-8B 交叉编码重排
+                    │
+                    ▼
+       Top-K RetrievalHit(rerank 分数 0~1)
+
+任一外部环节失败 → 自动回落关键词结果,检索永不因外网抖动而失败
 ```
 
 ### 关键设计:Invariant 7 不动摇
@@ -330,20 +350,24 @@ flowchart LR
 
 > 首个多 Agent 组件:**单一职责、无状态、无共享内存、全只读**(AGENTS.md 多 Agent 硬条件全满足)。主 Agent 通过 `ask_stats` 工具调用它,说完即销毁。
 
-```mermaid
-sequenceDiagram
-    participant U as 用户
-    participant M as 主Agent(SupportAgent)
-    participant S as 问数子代理(StatsAgent)
-    participant DB as TicketStore(只读)
-    U->>M: "最近一周网络类工单有几个?"
-    M->>S: ask_stats(question)
-    S->>S: LLM→规格JSON + 规则信号交叉校验<br/>_clean() 白名单清洗
-    S->>DB: stats_filtered(category=network,<br/>since=7天前)
-    DB-->>S: {OPEN: 3}
-    S-->>M: "统计口径:last_7d、类别=network。3 单"
-    M-->>U: 引用子代理结果作答
-    Note over S: 无状态调用,结果即销毁<br/>畸形输出降级规则解析
+```text
+ 用户            主 Agent(SupportAgent)        问数子代理(StatsAgent)       TicketStore(只读)
+  │ "最近一周网络类 │                              │                          │
+  │  工单有几个?"   │                              │                          │
+  ├───────────────►│ ask_stats(question)          │                          │
+  │                ├─────────────────────────────►│ LLM→规格 JSON             │
+  │                │                              │ + 规则信号交叉校验          │
+  │                │                              │ + 白名单清洗 _clean()      │
+  │                │                              ├─────────────────────────►│
+  │                │                              │   stats_filtered(         │
+  │                │                              │     category=network,     │
+  │                │                              │     since=7 天前)          │
+  │                │                              │◄─────────────────────────┤
+  │                │                              │   {OPEN: 3}               │
+  │                │◄─────────────────────────────┤                          │
+  │                │ 「统计口径:last_7d、类别=network。3 单」                    │
+  │◄───────────────┤ 引用子代理结果作答             │                          │
+  │                │      (子代理无状态,结果即销毁)  │                          │
 ```
 
 ### 三道防线
