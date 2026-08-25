@@ -356,6 +356,11 @@ class SupportWorkflow:
         if decision.intent == "other" and len(self._tickets.active_tickets(user.id)) == 1:
             # Unclassifiable text with exactly one active ticket: continuation (AC-12).
             return self._prepare_support(envelope, user, session, conversation)
+        if decision.intent == "other" and self._has_llm():
+            # Unclassifiable WITHOUT business signal: let the LLM converse.
+            # A handoff ticket is created only when the model itself flags
+            # needs_human — no more ticket spam for casual chat.
+            return self._prepare_chitchat(envelope, user, session, conversation, origin_other=True)
         return self._prepare_other(envelope, user, session, conversation)
 
     def _prepare_faq(
@@ -477,8 +482,12 @@ class SupportWorkflow:
         reply = self._status_line(ticket)
         return self._deterministic(envelope, user, session, WorkflowKind.PROGRESS, reply, ticket)
 
+    def _has_llm(self) -> bool:
+        return getattr(self._agent, "_llm", None) is not None
+
     def _prepare_chitchat(
-        self, envelope: InboundEnvelope, user: User, session: Session, conversation: Conversation
+        self, envelope: InboundEnvelope, user: User, session: Session, conversation: Conversation,
+        *, origin_other: bool = False,
     ) -> PreparedOutcome:
         """Social messages (greetings/identity/thanks/help/test noise).
 
@@ -489,7 +498,7 @@ class SupportWorkflow:
         """
         context = self._build_context(envelope, user, session, None, conversation)
         return PreparedOutcome(
-            kind=WorkflowKind.CHITCHAT,
+            kind=WorkflowKind.OTHER if origin_other else WorkflowKind.CHITCHAT,
             needs_agent=True,
             intent=INTENT_CHITCHAT,
             context=context,
@@ -504,9 +513,39 @@ class SupportWorkflow:
         prepared: PreparedOutcome,
         run: AgentRunResult,
     ) -> WorkflowResult:
+        decision = run.decision
+        wants_handoff = (
+            prepared.kind == WorkflowKind.OTHER
+            and not run.fallback_used
+            and decision is not None
+            and decision.needs_human
+        )
+        if wants_handoff and decision is not None:
+            # Model judged this a real request needing a human: back the
+            # follow-up claim with a REAL ticket (AC-21 honesty preserved).
+            ticket = self._create_handoff_ticket(envelope, user, conversation)
+            self._bind_session_ticket(session, ticket)
+            self._trace_event(
+                envelope.trace_id,
+                "ticket",
+                {"resolution": "other_handoff", "ticket_id": ticket.id},
+            )
+            reply = f"{decision.reply_draft}（已为您创建工单 {ticket.id}，专人跟进）"
+            self._record_reply(reply, user, session, envelope)
+            if self._actions is not None:
+                self._actions.conversation_reply(
+                    channel=conversation.channel,
+                    conversation_id=conversation.channel_conversation_id,
+                    text=reply,
+                    trace_id=envelope.trace_id,
+                    source_event_id=f"handoff:{run.run_id}",
+                )
+            self._trace_agent_run(envelope.trace_id, run)
+            return WorkflowResult(kind=WorkflowKind.OTHER, reply=reply, ticket=ticket)
+
         reply = (
-            run.decision.reply_draft
-            if not run.fallback_used and run.decision is not None
+            decision.reply_draft
+            if not run.fallback_used and decision is not None
             else _chitchat_reply(envelope.text)
         )
         self._record_reply(reply, user, session, envelope)
@@ -519,6 +558,8 @@ class SupportWorkflow:
                 source_event_id=f"chitchat:{run.run_id}",
             )
         self._trace_agent_run(envelope.trace_id, run)
+        # conversational outcome is always reported as chitchat, even when
+        # it originated from an unclassifiable `other` message
         return WorkflowResult(kind=WorkflowKind.CHITCHAT, reply=reply)
 
     def _prepare_other(

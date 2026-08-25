@@ -109,3 +109,49 @@ def test_test_noise_message_never_creates_ticket(app_ctx):
         assert resp.json()["workflow"] == "chitchat", f"{text} should be chitchat"
     after = len(list(app_ctx.store.list_by_user(app_ctx.users["zhangsan"])))
     assert after == before
+
+
+def test_casual_chat_with_llm_no_ticket(app_ctx):
+    from tests.conftest import WECOM_REPAIR_GROUP
+
+    app_ctx.with_llm(_NeedsHumanLLM(False))
+    before = len(list(app_ctx.store.list_by_user(app_ctx.users["zhangsan"])))
+    resp = app_ctx.client.post(
+        "/webhooks/wecom",
+        json={"MsgId": "casual-1", "FromUserName": "zhangsan", "Content": "给我讲个笑话吧",
+              "CreateTime": 4000, "conversation_id": WECOM_REPAIR_GROUP},
+    )
+    body = resp.json()
+    assert body["workflow"] == "chitchat" and body["ticket_id"] is None
+    assert len(list(app_ctx.store.list_by_user(app_ctx.users["zhangsan"]))) == before
+
+
+def test_llm_flagged_request_still_creates_ticket(app_ctx):
+    from tests.conftest import WECOM_REPAIR_GROUP
+
+    app_ctx.with_llm(_NeedsHumanLLM(True))
+    resp = app_ctx.client.post(
+        "/webhooks/wecom",
+        json={"MsgId": "casual-2", "FromUserName": "zhangsan", "Content": "帮我订下周的会议室并且通知所有人",
+              "CreateTime": 4001, "conversation_id": WECOM_REPAIR_GROUP},
+    )
+    body = resp.json()
+    assert body["workflow"] == "other" and body["ticket_id"]
+
+
+class _NeedsHumanLLM:
+    """Chitchat-pack LLM whose needs_human flag is configurable."""
+
+    model = "needs-human-fake"
+
+    def __init__(self, needs_human: bool) -> None:
+        self._needs_human = needs_human
+
+    def complete(self, system: str, user: str) -> str:
+        from tests.fake_llm import make_decision
+
+        return make_decision(
+            summary="闲聊判定", category="general", action="faq_answer",
+            reply="好的～" if not self._needs_human else "这个需求我帮您转给人工同事处理。",
+            needs_human=self._needs_human,
+        )
