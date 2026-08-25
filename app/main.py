@@ -149,6 +149,12 @@ def _build_directory(seed_dir: str | Path):
     return DirectoryService(directory_dir)
 
 
+def _stats_agent(llm, store: TicketStore):
+    from app.application.stats_agent import StatsAgent
+
+    return StatsAgent(llm=llm, tickets=store)
+
+
 def _maybe_hybrid(retriever: Retriever) -> Retriever:
     """Wrap the keyword retriever with vector+rerank fusion (C2).
 
@@ -252,7 +258,9 @@ def build_workflow(
     retriever = _maybe_hybrid(retriever)
     memory = build_memory(conn, store)
     directory = _build_directory(seed_dir)
-    tools = AgentToolPort(store, MessageRepository(conn), retriever, memory, directory=directory)
+    stats_agent = _stats_agent(llm, store)
+    tools = AgentToolPort(store, MessageRepository(conn), retriever, memory,
+                          directory=directory, stats_agent=stats_agent)
     return SupportWorkflow(
         router=IntentRouter(),
         retriever=retriever,

@@ -533,6 +533,46 @@ class TicketStore(SqliteRepository):
         ).fetchall()
         return {str(r["k"]): int(r["n"]) for r in rows}
 
+    def stats_filtered(
+        self,
+        column: str,
+        *,
+        status: str | None = None,
+        queue: str | None = None,
+        category: str | None = None,
+        priority: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+    ) -> dict[str, int]:
+        """Grouped counts under equality filters + an ISO time window.
+
+        Same column whitelist as stats_grouped; all filter values are
+        parameterized. Read-only (C10 问数 sub-agent execution surface).
+        """
+        if column not in ("status", "queue", "category", "priority"):
+            raise ValueError(f"unsupported stats column: {column}")
+        where = ["1=1"]
+        params: list[str] = []
+        if status:
+            where.append("status = ?")
+            params.append(status.upper())
+        for field_name, value in (("queue", queue), ("category", category), ("priority", priority)):
+            if value:
+                where.append(f"{field_name} = ?")  # noqa: S608 - fixed column names
+                params.append(value)
+        if since:
+            where.append("created_at >= ?")
+            params.append(since)
+        if until:
+            where.append("created_at < ?")
+            params.append(until)
+        rows = self._conn.execute(
+            f"SELECT {column} AS k, COUNT(*) AS n FROM tickets WHERE {' AND '.join(where)} "  # noqa: S608 - whitelisted
+            "GROUP BY " + column,
+            tuple(params),
+        ).fetchall()
+        return {str(r["k"]): int(r["n"]) for r in rows}
+
     def list_by_user(self, user_id: str) -> list[Ticket]:
         rows = self._conn.execute(
             "SELECT * FROM tickets WHERE user_id = ? ORDER BY created_at", (user_id,)

@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from app.application.memory_service import MemoryService
 from app.application.retriever import Retriever
+from app.application.stats_agent import StatsAgent
 from app.domain.role import UserRole
 from app.domain.ticket import TicketStatus
 from app.infrastructure.directory import DirectoryService
@@ -28,6 +29,7 @@ ALLOWED_TOOLS = frozenset({
     "contact_lookup",
     "asset_lookup",
     "ticket_stats",
+    "ask_stats",
 })
 
 
@@ -53,12 +55,14 @@ class AgentToolPort:
         retriever: Retriever,
         memory: MemoryService,
         directory: DirectoryService | None = None,
+        stats_agent: "StatsAgent | None" = None,
     ) -> None:
         self._tickets = tickets
         self._messages = messages
         self._retriever = retriever
         self._memory = memory
         self._directory = directory
+        self._stats_agent = stats_agent
 
     def call(
         self,
@@ -86,6 +90,13 @@ class AgentToolPort:
             observation = self._asset_lookup(str(args.get("query") or ""))
         elif tool == "ticket_stats":
             observation = self._ticket_stats(str(args.get("group_by") or "status"))
+        elif tool == "ask_stats":
+            question = str(args.get("question") or "")
+            if self._stats_agent is None:
+                observation = "统计子代理不可用"
+            else:
+                answer = self._stats_agent.run(question)
+                observation = answer.text
         else:  # pragma: no cover - guarded by ALLOWED_TOOLS
             raise AgentToolDenied(f"tool not allowed: {tool}")
         return ToolCall(tool=tool, args=dict(args), observation=observation)

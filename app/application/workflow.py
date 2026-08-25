@@ -218,7 +218,13 @@ class SupportWorkflow:
                 "get_allowed_actions",
                 "contact_lookup",
                 "asset_lookup",
-                "ticket_stats",
+                "ask_stats",
+            }),
+            # progress/统计问询: 问数子代理优先
+            "progress_query": frozenset({
+                "get_ticket_history",
+                "get_allowed_actions",
+                "ask_stats",
             }),
         }
         allowed = base.get(prepared.intent)
