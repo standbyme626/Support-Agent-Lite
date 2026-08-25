@@ -374,6 +374,64 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
             raise HTTPException(status_code=503, detail="ops not configured")
         return app.state.ops
 
+    # --- A2A (Agent-to-Agent) minimal surface ----------------------------
+
+    def _a2a_handle_message(text: str) -> str:
+        """Delegate an external agent's message into read-only capabilities.
+
+        Remote callers get FAQ answers (grounded), progress timelines and
+        guidance — never ticket mutation. Identity binding stays a
+        human-channel concern; this is the honest A2A boundary today.
+        """
+        from app.application.a2a import sanitize_for_a2a
+        from app.application.ticket_insights import format_case_timeline
+        import re as _re
+
+        workflow = getattr(_ingress(), "_workflow", None)
+        retriever = getattr(workflow, "_retriever", None)
+        store = _ops().tickets._store  # noqa: SLF001
+        m = _re.search(r"T\d{4,}", text)
+        if m:  # progress skill
+            return sanitize_for_a2a(format_case_timeline(store, m.group(0)))
+        if retriever is not None:
+            try:
+                rag = retriever.answer(text)
+            except Exception:  # noqa: BLE001
+                rag = None
+            if rag is not None:
+                top = rag.hits[0]
+                return sanitize_for_a2a(
+                    f"【{top.document.doc_id} {top.document.title}】{rag.text}"
+                )
+        return (
+            "该问题需要人工处理。请通过企业渠道（企业微信/飞书）发送故障描述，"
+            "系统将创建工单并由运维跟进。"
+        )
+
+    @app.get("/.well-known/agent.json")
+    def a2a_agent_card(request: Request) -> Any:
+        from app.application.a2a import build_agent_card
+
+        base_url = str(request.base_url).rstrip("/")
+        return JSONResponse(build_agent_card(base_url=base_url))
+
+    @app.post("/a2a/rpc")
+    async def a2a_rpc(request: Request) -> Any:
+        from app.application.a2a import A2AHandler
+
+        handler = getattr(app.state, "a2a_handler", None)
+        if handler is None:
+            handler = A2AHandler(handle_message=_a2a_handle_message)
+            app.state.a2a_handler = handler
+        try:
+            body: dict = await request.json()
+        except Exception:  # noqa: BLE001
+            return JSONResponse(handler.dispatch({}).payload, status_code=400)
+        result = handler.dispatch(body)
+        return JSONResponse(result.payload, status_code=200 if result.ok else 400)
+
+    # ----------------------------------------------------------------------
+
     def _dispatch() -> None:
         try:
             _ops().notifications.dispatch()
