@@ -10,6 +10,9 @@ import os
 
 if not os.environ.get("RUN_REAL_CHANNEL_TESTS"):
     os.environ["REAL_CHANNEL_NETWORK"] = "false"
+# Hermeticity: vector/rerank backends are external services — tests always
+# run keyword-only unless a test explicitly opts in.
+os.environ["KB_VECTOR_ENABLED"] = "false"
 
 import pytest
 from fastapi.testclient import TestClient

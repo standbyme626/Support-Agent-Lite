@@ -149,6 +149,39 @@ def _build_directory(seed_dir: str | Path):
     return DirectoryService(directory_dir)
 
 
+def _maybe_hybrid(retriever: Retriever) -> Retriever:
+    """Wrap the keyword retriever with vector+rerank fusion (C2).
+
+    Activated by KB_VECTOR_ENABLED=true AND a built index on disk; any
+    failure keeps the plain TF-IDF retriever (deterministic degradation).
+    """
+    import os
+
+    if os.environ.get("KB_VECTOR_ENABLED", "").lower() not in ("1", "true", "yes"):
+        return retriever
+    try:
+        from app.application.hybrid_retriever import HybridRetriever
+        from app.infrastructure.vector_store import (
+            NumpyVectorStore,
+            SiliconFlowEmbedding,
+            SiliconFlowReranker,
+        )
+
+        index_dir = Path(__file__).resolve().parent.parent / "runtime" / "vector_index"
+        store = NumpyVectorStore(index_dir)
+        if not store.load():
+            return retriever
+        return HybridRetriever(
+            retriever,
+            embedding=SiliconFlowEmbedding(),
+            store=store,
+            reranker=SiliconFlowReranker(),
+        )
+    except Exception as exc:  # noqa: BLE001 - retrieval must never hard-fail
+        print(f"[c2] hybrid retriever unavailable, keyword-only: {exc!r}")
+        return retriever
+
+
 def build_core(conn: Any, store: TicketStore, outbound_clients: dict | None = None) -> dict[str, Any]:
     """Shared V2 services (roles/conversations/targets/outbox/actions)."""
     users = UserRepository(conn)
@@ -216,6 +249,7 @@ def build_workflow(
     """
     core = core or build_core(conn, store)
     retriever = Retriever(seed_dir)
+    retriever = _maybe_hybrid(retriever)
     memory = build_memory(conn, store)
     directory = _build_directory(seed_dir)
     tools = AgentToolPort(store, MessageRepository(conn), retriever, memory, directory=directory)
