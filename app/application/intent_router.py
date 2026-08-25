@@ -34,6 +34,7 @@ _CHITCHAT_EXACT: frozenset[str] = frozenset({
     "help", "/help", "帮助", "怎么用", "怎么使用", "使用说明",
 })
 _CHITCHAT_MAX_LEN = 15
+_TICKET_REF_RE = __import__("re").compile(r"T\d{4,}")
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,8 @@ class IntentRouter:
         }),
         "progress_query": frozenset({
             "进度", "怎么样了", "处理了吗", "好了吗", "进展", "谁在跟进",
-            "什么时候能", "有结果吗", "结果如何", "跟进",
+            "什么时候能", "有结果吗", "结果如何", "跟进", "哪一步", "到哪了",
+            "啥情况", "什么情况",
         }),
         "other": frozenset(),
     }
@@ -95,6 +97,11 @@ class IntentRouter:
         normalized = message.strip().lower()
         if not normalized:
             return IntentDecision("other", 0.0, True, "empty-message")
+
+        # Explicit ticket reference always routes to progress first —
+        # asking about T0001 must never degrade into chitchat.
+        if _TICKET_REF_RE.search(normalized.upper()):
+            return IntentDecision("progress_query", 0.9, False, "ticket-id-reference")
 
         # Chitchat first: short social messages must never fall through to
         # the handoff-ticket path (B-fix: 「你好你是谁」不建单).

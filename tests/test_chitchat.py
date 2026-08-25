@@ -155,3 +155,9 @@ class _NeedsHumanLLM:
             reply="好的～" if not self._needs_human else "这个需求我帮您转给人工同事处理。",
             needs_human=self._needs_human,
         )
+
+
+def test_ticket_reference_never_degrades_to_chitchat():
+    router = IntentRouter()
+    d = router.route("帮我看看T0004现在到哪一步了")
+    assert d.intent == "progress_query"
