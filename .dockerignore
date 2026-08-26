@@ -1,0 +1,22 @@
+# keep image minimal & secrets out
+.git
+.gitignore
+.venv
+venv
+__pycache__
+**/__pycache__
+*.pyc
+.env*
+!.env.example
+reference/
+datasets/
+runtime/
+tests/
+docs/
+scripts/
+*.md
+!README.md
+storage/*.db*
+*.sqlite3
+.pytest_cache
+.ruff_cache

@@ -1,7 +1,28 @@
+# Development / single-host deployment.
+#   docker compose up -d --build
+#   curl http://127.0.0.1:8000/health
+#
+# Secrets stay in .env (gitignored) — never baked into the image.
 services:
-  api:
+  app:
     build: .
+    image: support-agent-lite:latest
+    container_name: support-agent-lite
+    restart: unless-stopped
     ports:
       - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
     environment:
-      - APP_ENV=dev
+      SUPPORT_AGENT_DB: /app/runtime/support_agent.db
+      REAL_CHANNEL_NETWORK: ${REAL_CHANNEL_NETWORK:-false}
+      KB_VECTOR_ENABLED: ${KB_VECTOR_ENABLED:-false}
+    volumes:
+      - ./runtime:/app/runtime
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
