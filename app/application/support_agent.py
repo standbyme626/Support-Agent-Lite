@@ -334,6 +334,7 @@ class SupportAgent:
             )
             or "（无）"
         )
+        history_summary = context.history_summary or "（无——会话尚未触发压缩）"
         tool_observations = ""
         if observations:
             tool_observations = "# 工具调用记录\n" + "\n\n".join(observations)
@@ -352,6 +353,7 @@ class SupportAgent:
             "location": context.location or "未知",
             "ticket_block": ticket_block,
             "recent_messages": recent,
+            "history_summary": history_summary,
             "memories_block": memories,
             "knowledge_block": knowledge,
             "tool_observations": tool_observations,

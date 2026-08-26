@@ -12,7 +12,7 @@ from typing import Protocol, Any, Iterator
 from app.domain.approval import Approval, ApprovalStatus, InvalidApprovalDecision
 from app.domain.conversation import Conversation, ConversationPurpose, ConversationType
 from app.domain.identity import ChannelIdentity, Session, User
-from app.domain.memory import Memory, MemoryKind
+from app.domain.memory import Memory, MemoryKind, SessionCompaction
 from app.domain.message import Message
 from app.domain.notification import NotificationRecord, NotificationType, OutboxStatus, Visibility
 from app.domain.pending_action import ApprovableAction, PendingAction, PendingActionStatus
@@ -204,11 +204,66 @@ class MessageRepository(SqliteRepository):
         )
         return message
 
-    def recent(self, session_id: str, limit: int = 6) -> list[Message]:
+    def recent(self, session_id: str, limit: int = 6, *, after_id: str | None = None) -> list[Message]:
+        """Recent messages in chronological order.
+
+        `after_id` (compaction retained-tail 语义): only messages AFTER
+        the given message id — compacted history is replaced by the
+        session's rolling summary and must not re-enter the window.
+        """
+        if after_id is not None:
+            anchor = self._conn.execute(
+                "SELECT rowid FROM messages WHERE id = ? AND session_id = ?", (after_id, session_id)
+            ).fetchone()
+            if anchor is not None:
+                rows = self._conn.execute(
+                    "SELECT * FROM messages WHERE session_id = ? AND rowid > ? "
+                    "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                    (session_id, anchor["rowid"], limit),
+                ).fetchall()
+                return self._rows_to_messages(rows)
         rows = self._conn.execute(
             "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
             (session_id, limit),
         ).fetchall()
+        return self._rows_to_messages(rows)
+
+    def list_after(self, session_id: str, *, after_id: str | None = None) -> list[Message]:
+        """ALL messages after the given id (chronological); compactor's
+        candidate view of the uncompacted tail. NOTE: ascending build —
+        `_rows_to_messages` reverses and must NOT be reused here."""
+        if after_id is not None:
+            anchor = self._conn.execute(
+                "SELECT rowid FROM messages WHERE id = ? AND session_id = ?", (after_id, session_id)
+            ).fetchone()
+            if anchor is not None:
+                rows = self._conn.execute(
+                    "SELECT * FROM messages WHERE session_id = ? AND rowid > ? ORDER BY created_at, rowid",
+                    (session_id, anchor["rowid"]),
+                ).fetchall()
+                return self._ascending(rows)
+        rows = self._conn.execute(
+            "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at, rowid", (session_id,)
+        ).fetchall()
+        return self._ascending(rows)
+
+    @staticmethod
+    def _ascending(rows: list[sqlite3.Row]) -> list[Message]:
+        return [
+            Message(
+                id=r["id"],
+                session_id=r["session_id"],
+                user_id=r["user_id"],
+                role=r["role"],
+                text=r["text"],
+                trace_id=r["trace_id"],
+                created_at=_parse_dt(r["created_at"]),
+            )
+            for r in rows
+        ]
+
+    @staticmethod
+    def _rows_to_messages(rows: list[sqlite3.Row]) -> list[Message]:
         return list(
             reversed(
                 [
@@ -316,8 +371,8 @@ class MemoryRepository(SqliteRepository):
 
     def add(self, memory: Memory) -> Memory:
         self._conn.execute(
-            "INSERT INTO memories (id, user_id, ticket_id, kind, fact, confidence, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO memories (id, user_id, ticket_id, kind, fact, confidence, source, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 memory.id,
                 memory.user_id,
@@ -325,6 +380,7 @@ class MemoryRepository(SqliteRepository):
                 memory.kind.value,
                 memory.fact,
                 memory.confidence,
+                memory.source,
                 memory.created_at.isoformat(),
             ),
         )
@@ -366,8 +422,60 @@ class MemoryRepository(SqliteRepository):
             kind=MemoryKind(row["kind"]),
             fact=row["fact"],
             confidence=row["confidence"],
+            source=row["source"] if "source" in row.keys() else "",
             created_at=_parse_dt(row["created_at"]),
         )
+
+
+class SessionCompactionRepository(SqliteRepository):
+    """Append-only rolling-summary entries per session (pi compaction).
+
+    Context building reads ONLY the latest entry; older rows stay for
+    audit (每个数字可从存储复查).
+    """
+
+    def add(self, compaction: SessionCompaction) -> SessionCompaction:
+        self._conn.execute(
+            "INSERT INTO session_compactions "
+            "(id, session_id, summary, first_kept_message_id, messages_compacted, chars_before, summarizer, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                compaction.id,
+                compaction.session_id,
+                compaction.summary,
+                compaction.first_kept_message_id,
+                compaction.messages_compacted,
+                compaction.chars_before,
+                compaction.summarizer,
+                compaction.created_at.isoformat(),
+            ),
+        )
+        return compaction
+
+    def latest_for(self, session_id: str) -> SessionCompaction | None:
+        row = self._conn.execute(
+            "SELECT * FROM session_compactions WHERE session_id = ? "
+            "ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            (session_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return SessionCompaction(
+            id=row["id"],
+            session_id=row["session_id"],
+            summary=row["summary"],
+            first_kept_message_id=row["first_kept_message_id"],
+            messages_compacted=row["messages_compacted"],
+            chars_before=row["chars_before"],
+            summarizer=row["summarizer"],
+            created_at=_parse_dt(row["created_at"]),
+        )
+
+    def count_for(self, session_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) FROM session_compactions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        return int(row[0])
 
 
 class TicketStore(SqliteRepository):

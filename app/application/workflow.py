@@ -33,6 +33,7 @@ from app.application.intent_router import IntentRouter
 from app.application.memory_service import MemoryService
 from app.application.notification_service import SYSTEM_ACTOR
 from app.application.policy import PolicyValidator
+from app.application.session_compactor import SessionCompactor
 from app.application.retriever import RAGAnswer, RetrievalHit, Retriever
 from app.application.role_service import RoleService
 from app.application.support_agent import (
@@ -161,10 +162,14 @@ class SupportWorkflow:
         session_ctx: SessionTicketContextRepository | None = None,
         policy: PolicyValidator | None = None,
         notifications=None,
+        compactor: SessionCompactor | None = None,
     ) -> None:
         # notifications: NotificationService (optional) — lets deterministic
         # outcomes (chitchat) emit outbound records; None keeps them silent.
+        # compactor: SessionCompactor (optional, #6) — rolling summary after
+        # each persisted message; failure must never break the main flow.
         self._notifications = notifications
+        self._compactor = compactor
         self._router = router
         self._retriever = retriever
         self._tickets = ticket_service
@@ -1122,6 +1127,11 @@ class SupportWorkflow:
                 trace_id=envelope.trace_id,
             )
         )
+        if self._compactor is not None:
+            try:
+                self._compactor.maybe_compact(session.id)
+            except Exception:  # noqa: BLE001 - 压缩失败不影响主流程(降级为无摘要)
+                pass
 
     @staticmethod
     def _clarify_reply(candidates: list[Ticket]) -> str:

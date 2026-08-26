@@ -18,6 +18,8 @@ expected_schema: application/json
 
 # 上下文
 - 渠道：{channel}；会话类型：{conversation_type}；会话用途：{conversation_purpose}；当前身份角色：{actor_role}
+- 会话摘要（更早对话的滚动压缩摘要，为"（无）"则忽略）：
+{history_summary}
 - 最近对话：
 {recent_messages}
 

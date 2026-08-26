@@ -33,6 +33,7 @@ FULL_VARS: dict[str, object] = {
     "location": "A3",
     "ticket_block": "（暂无关联工单）",
     "recent_messages": "- user: 打印机卡纸",
+    "history_summary": "（无——会话尚未触发压缩）",
     "memories_block": "（无）",
     "knowledge_block": "- kb-x: 标题 | 内容 | score=0.9",
     "tool_observations": "",

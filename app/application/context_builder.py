@@ -16,7 +16,7 @@ from app.domain.identity import Session, User
 from app.domain.memory import Memory
 from app.domain.message import Message
 from app.domain.ticket import Ticket
-from app.infrastructure.repositories import MessageRepository
+from app.infrastructure.repositories import MessageRepository, SessionCompactionRepository
 
 _RECENT_LIMIT = 6
 
@@ -49,6 +49,8 @@ class AgentContext:
     ticket_summary: str = ""
     # conversation perception (chronological, role-labeled)
     recent_messages: list[Message] = field(default_factory=list)
+    # rolling summary of messages older than recent_messages (#6, pi compaction)
+    history_summary: str = ""
     latest_user_text: str = ""
     # memory / knowledge perception
     recalled_memories: list[Memory] = field(default_factory=list)
@@ -64,11 +66,23 @@ class AgentContext:
 
 
 class ContextBuilder:
-    """Builds an AgentContext for a resolved ticket + session history."""
+    """Builds an AgentContext for a resolved ticket + session history.
 
-    def __init__(self, messages: MessageRepository, recent_limit: int = _RECENT_LIMIT) -> None:
+    With a SessionCompactionRepository wired in, the recent window starts
+    AFTER the latest compaction's first_kept_message_id and the compacted
+    history is carried as `history_summary` (pi compaction 语义:摘要替换
+    更早历史,近期原文保留)。
+    """
+
+    def __init__(
+        self,
+        messages: MessageRepository,
+        recent_limit: int = _RECENT_LIMIT,
+        compactions: SessionCompactionRepository | None = None,
+    ) -> None:
         self._messages = messages
         self._recent_limit = recent_limit
+        self._compactions = compactions
 
     def build(
         self,
@@ -85,7 +99,12 @@ class ContextBuilder:
         location: str = "",
         knowledge_evidence: list[KnowledgeEvidence] | None = None,
     ) -> AgentContext:
-        recent = self._messages.recent(session.id, limit=self._recent_limit)
+        latest_compaction = self._compactions.latest_for(session.id) if self._compactions else None
+        recent = self._messages.recent(
+            session.id,
+            limit=self._recent_limit,
+            after_id=latest_compaction.first_kept_message_id if latest_compaction else None,
+        )
         return AgentContext(
             user_id=user.id,
             session_id=session.id,
@@ -99,6 +118,7 @@ class ContextBuilder:
             ticket=ticket,
             ticket_summary=self._summarize_ticket(ticket, recent),
             recent_messages=recent,
+            history_summary=latest_compaction.summary if latest_compaction else "",
             latest_user_text=envelope.text,
             recalled_memories=list(recalled_memories or []),
             knowledge_evidence=list(knowledge_evidence or []),

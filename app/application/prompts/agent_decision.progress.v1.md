@@ -24,6 +24,8 @@ expected_schema: application/json
 - 渠道：{channel}；会话类型：{conversation_type}；会话用途：{conversation_purpose}；当前身份角色：{actor_role}；位置：{location}
 - 工单：
 {ticket_block}
+- 会话摘要（更早对话的滚动压缩摘要，时间上早于下方最近对话；为"（无）"则忽略）：
+{history_summary}
 - 最近对话（时间顺序，role: text）：
 {recent_messages}
 - 相关记忆（memory_refs 只能从中选择 id；若列表为“（无）”则必须为空数组）：

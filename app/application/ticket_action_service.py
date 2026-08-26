@@ -334,7 +334,7 @@ class TicketActionService:
                 trace_id=trace_id,
                 conversation_id=conversation_id,
             )
-            memories = self._memory.remember(ticket_id)
+            memories = self._memory.remember(ticket_id, source="confirmed_closure")
             self._trace_memory_extract(trace_id, ticket_id, memories)
             event_id = f"{ticket_id}:closed:{trace_id}"
             public = self._targets.requester_public(ticket, channel=channel)
@@ -617,7 +617,9 @@ class TicketActionService:
                 trace_id=trace_id,
                 conversation_id=conversation_id,
             )
-            self._trace_memory_extract(trace_id, pending.ticket_id, self._memory.remember(pending.ticket_id))
+            self._trace_memory_extract(
+                trace_id, pending.ticket_id, self._memory.remember(pending.ticket_id, source="force_closed")
+            )
             operator = self._targets.operator_queue(ticket.queue, channel=channel)
             public = self._targets.requester_public(ticket)
             requester_name = self._user_name(ticket.user_id)

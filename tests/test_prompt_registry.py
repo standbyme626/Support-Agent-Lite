@@ -102,6 +102,7 @@ def test_real_agent_prompt_renders_with_all_variables() -> None:
             "location": "A3栋",
             "ticket_block": "- 工单号：T0001",
             "recent_messages": "- user: A3 空调坏了",
+            "history_summary": "（无——会话尚未触发压缩）",
             "memories_block": "（无）",
             "knowledge_block": "（无）",
             "tool_observations": "",

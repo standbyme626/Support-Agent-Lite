@@ -47,6 +47,7 @@ from app.application.notification_service import NotificationService
 from app.application.policy import PolicyValidator
 from app.application.retriever import Retriever
 from app.application.role_service import RoleService
+from app.application.session_compactor import SessionCompactor
 from app.application.session_service import SessionService
 from app.application.support_agent import SupportAgent
 from app.application.target_resolver import TargetResolver
@@ -72,6 +73,7 @@ from app.infrastructure.repositories import (
     NotificationOutboxRepository,
     PendingActionRepository,
     RoleRepository,
+    SessionCompactionRepository,
     SessionRepository,
     SessionTicketContextRepository,
     TicketStore,
@@ -282,12 +284,18 @@ def build_workflow(
     tools = AgentToolPort(store, MessageRepository(conn), retriever, memory,
                           directory=directory, stats_agent=stats_agent,
                           ticket_index=ticket_index)
+    # #6 会话级滚动摘要:LLM 可用时用其生成摘要,否则确定性抽取(全离线可跑)
+    compactor = SessionCompactor(
+        MessageRepository(conn),
+        SessionCompactionRepository(conn),
+        summarizer=_llm_summarizer(llm) if llm is not None else None,
+    )
     return SupportWorkflow(
         router=IntentRouter(),
         retriever=retriever,
         ticket_service=TicketService(store),
         resolver=TicketResolver(TicketService(store), store),
-        context_builder=ContextBuilder(MessageRepository(conn)),
+        context_builder=ContextBuilder(MessageRepository(conn), compactions=SessionCompactionRepository(conn)),
         agent=SupportAgent(llm=llm, tools=tools),
         messages=MessageRepository(conn),
         memory=memory,
@@ -299,7 +307,22 @@ def build_workflow(
         session_ctx=SessionTicketContextRepository(conn),
         policy=PolicyValidator(store),
         notifications=core["notifications"],
+        compactor=compactor,
     )
+
+
+def _llm_summarizer(llm: LLMClient) -> Callable[[str], str]:
+    """Wrap the provider LLM as a compaction summarizer (#6)."""
+
+    def summarize(conversation: str) -> str:
+        prompt = (
+            "把以下客服会话历史压缩为要点摘要(保留:用户每轮核心诉求、"
+            "已尝试的处理、当前未决问题;不编造新事实,200字以内):\n\n"
+            f"{conversation}"
+        )
+        return llm.complete(system="你是会话摘要助手,只输出摘要本身。", user=prompt)
+
+    return summarize
 
 
 def build_ingress(

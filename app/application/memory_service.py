@@ -38,8 +38,13 @@ class MemoryService:
         self._memories = memories
         self._extractor = extractor or MemoryExtractor()
 
-    def remember(self, ticket_id: str) -> list[Memory]:
-        """Extract and store memory for a CLOSED ticket (idempotent)."""
+    def remember(self, ticket_id: str, *, source: str = "") -> list[Memory]:
+        """Extract and store memory for a CLOSED ticket (idempotent).
+
+        `source` = closure provenance (v2.md §49): "confirmed_closure"
+        when the requester confirmed, "force_closed" on approved force
+        close. Stamped here so MemoryExtractor stays a pure extractor.
+        """
         existing = self._memories.list_by_ticket(ticket_id)
         if existing:
             return existing
@@ -50,6 +55,7 @@ class MemoryService:
             raise ValueError(f"cannot extract memory from non-closed ticket: {ticket.status.value}")
         result = self._extractor.extract(ticket, events=self._store.events(ticket_id))
         for memory in result.memories:
+            memory.source = source
             self._memories.add(memory)
         return result.memories
 
@@ -67,6 +73,10 @@ class MemoryService:
         so `Memory.confidence` is a real ranking input — a lower-confidence
         fact never outranks a same-relevance higher-confidence one, and the
         field is no longer a decorative value.
+
+        Source priority (v2.md §49, #6 补实现): a requester-confirmed
+        closure outranks a force-closed one at equal relevance — a forced
+        close may hide an unresolved issue, confirmed facts are proven.
         """
         terms = tokenize(text)
         if not terms:
@@ -75,7 +85,11 @@ class MemoryService:
         for memory in self._memories.list_by_user(user_id):
             score = self._score(terms, memory.fact)
             if score >= min_score and self._matched_count(terms, memory.fact) >= 1:
-                effective = score * self._confidence_factor(memory.confidence)
+                effective = (
+                    score
+                    * self._confidence_factor(memory.confidence)
+                    * self._source_factor(memory.source)
+                )
                 hits.append(RecallHit(memory=memory, score=effective))
         hits.sort(key=lambda hit: hit.score, reverse=True)
         return hits[:top_k]
@@ -97,6 +111,14 @@ class MemoryService:
         """0.5..1.0 scale: keeps the ranking honest while still letting
         confidence separate ties (score × factor)."""
         return 0.5 + 0.5 * max(0.0, min(1.0, confidence))
+
+    # force_closed 打 0.85 折:相关性同分时 confirmed 优先(§49),
+    # 但不完全屏蔽——强制关闭的工单也可能含真实解决信息。
+    _SOURCE_FACTORS: dict[str, float] = {"confirmed_closure": 1.0, "force_closed": 0.85}
+
+    @classmethod
+    def _source_factor(cls, source: str) -> float:
+        return cls._SOURCE_FACTORS.get(source, 1.0)
 
     @staticmethod
     def _matched_count(terms: set[str], fact: str) -> int:
