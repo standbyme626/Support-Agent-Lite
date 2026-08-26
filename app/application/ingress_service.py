@@ -79,17 +79,28 @@ class IngressService:
         self._workflow = workflow
         self._processing = InboundProcessingStore(idempotency._conn)  # noqa: SLF001
 
-    def process(self, channel: str, payload: dict) -> IngressResult:
+    def process(self, channel: str, payload: dict, on_stage: Callable[[str, dict], None] | None = None) -> IngressResult:
+        """Process one raw payload. `on_stage(stage, data)` (C5 SSE) is called
+        between pipeline phases so a streaming client can observe progress;
+        it must never affect processing (exceptions swallowed by _emit)."""
         adapter = self._adapters[channel]
         envelope = adapter.build_inbound(payload)
         key = adapter.idempotency_key(payload)
         if self._workflow is not None:
-            return self._process_two_phase(envelope, key)
+            return self._process_two_phase(envelope, key, on_stage)
         return self._process_legacy(envelope, key)
 
     # --- two-phase processing (V2.1) ---
 
-    def _process_two_phase(self, envelope: InboundEnvelope, key: str) -> IngressResult:
+    def _emit(self, on_stage: Callable[[str, dict], None] | None, stage: str, data: dict) -> None:
+        if on_stage is None:
+            return
+        try:
+            on_stage(stage, data)
+        except Exception:  # noqa: BLE001 - 观测回调绝不影响主流程
+            pass
+
+    def _process_two_phase(self, envelope: InboundEnvelope, key: str, on_stage: Callable[[str, dict], None] | None = None) -> IngressResult:
         conn = self._idempotency._conn  # noqa: SLF001
         # ---- Phase A: claim + identity/session/conversation + deterministic ----
         with txn(conn):
@@ -146,6 +157,21 @@ class IngressService:
                     conversation_id=getattr(conversation, "channel_conversation_id", envelope.conversation_id),
                 )
                 prepared = self._workflow.prepare(envelope, user, session, conversation)
+                self._emit(
+                    on_stage,
+                    "received",
+                    {"trace_id": envelope.trace_id, "user_id": user.id, "session_id": session.id},
+                )
+                self._emit(
+                    on_stage,
+                    "prepared",
+                    {
+                        "intent": getattr(prepared, "intent", None),
+                        "kind": getattr(prepared.kind, "value", None),
+                        "ticket_id": prepared.ticket.id if prepared.ticket else None,
+                        "needs_agent": bool(prepared.needs_agent),
+                    },
+                )
                 if prepared.needs_agent:
                     self._processing.update(
                         key,
@@ -165,7 +191,9 @@ class IngressService:
 
         # ---- Agent run: OUTSIDE any write transaction (no DB write lock) ----
         if prepared.needs_agent:
+            self._emit(on_stage, "agent_started", {"trace_id": envelope.trace_id})
             run = self._workflow.run_agent(prepared)
+            self._emit(on_stage, "agent_completed", {"trace_id": envelope.trace_id})
             # ---- Phase B: CAS-guarded decision application ----
             try:
                 with txn(conn):
@@ -174,6 +202,15 @@ class IngressService:
                         return IngressResult(envelope=envelope, user=user, session=session, conversation=conversation, duplicate=True)
                     result = self._workflow.apply(envelope, user, session, conversation, prepared, run)
                     self._processing.update(key, state=ProcessingState.COMPLETED, reply=result.reply)
+                    self._emit(
+                        on_stage,
+                        "completed",
+                        {
+                            "trace_id": envelope.trace_id,
+                            "reply": getattr(result, "reply", None),
+                            "ticket_id": getattr(getattr(result, "ticket", None), "id", None),
+                        },
+                    )
             except Exception as exc:
                 try:
                     with txn(conn):
@@ -183,6 +220,15 @@ class IngressService:
                 raise
         else:
             result = prepared.result
+            self._emit(
+                on_stage,
+                "completed",
+                {
+                    "trace_id": envelope.trace_id,
+                    "reply": getattr(result, "reply", None),
+                    "ticket_id": getattr(getattr(result, "ticket", None), "id", None),
+                },
+            )
 
         if self._notifications is not None:
             self._notifications.dispatch()

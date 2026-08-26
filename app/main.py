@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 
 def _load_env_file() -> None:
@@ -30,6 +30,7 @@ def _load_env_file() -> None:
 
 _load_env_file()
 
+from app.adapters.api_adapter import ApiChannelAdapter
 from app.adapters.base import ChannelAdapterError, HttpInbound
 from app.adapters.feishu import FeishuAdapter
 from app.adapters.outbound import FeishuConfig, FeishuOutboundClient, WeComConfig, WeComOutboundClient
@@ -111,6 +112,7 @@ def _channel_adapters() -> dict[str, object]:
             verification_token=os.environ.get("FEISHU_VERIFICATION_TOKEN"),
             encrypt_key=os.environ.get("FEISHU_ENCRYPT_KEY"),
         ),
+        "api": ApiChannelAdapter(),
     }
 
 
@@ -545,6 +547,90 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
                 "reply": getattr(downstream, "reply", None),
                 "recalled": [m.fact for m in getattr(downstream, "recalled", [])],
             },
+        )
+
+    # --- C5: SSE streaming chat (async streaming demo surface) ---
+
+    @app.get("/api/chat/stream")
+    async def chat_stream(request: Request) -> StreamingResponse:
+        """Stream one chat turn as Server-Sent Events.
+
+        Event model (honest streaming): the bounded agent's decision is a
+        single JSON contract — token-level streaming would break schema
+        integrity the same way truncated tool_calls do (B5 防御立场), so we
+        stream PIPELINE STAGES instead (received → prepared → agent →
+        completed) and deliver the final reply in `done`. The webhooks path
+        is unchanged.
+        """
+        import asyncio
+        import json as _json
+        from uuid import uuid4
+
+        params = request.query_params
+        text = (params.get("text") or "").strip()
+        if not text:
+            raise HTTPException(status_code=400, detail="text is required")
+        channel_user_id = (params.get("user") or "api-demo").strip()
+        payload = {
+            "channel_user_id": channel_user_id,
+            "conversation_id": params.get("conversation_id") or f"api-{channel_user_id}",
+            "message_id": params.get("message_id") or f"api-{uuid4().hex[:12]}",
+            "name": params.get("name"),
+            "text": text,
+        }
+
+        loop = asyncio.get_running_loop()
+        events: asyncio.Queue = asyncio.Queue()
+
+        def on_stage(stage: str, data: dict) -> None:
+            loop.call_soon_threadsafe(events.put_nowait, {"stage": stage, **data})
+
+        def run() -> Any:
+            try:
+                return _ingress().process("api", payload, on_stage)
+            finally:
+                loop.call_soon_threadsafe(events.put_nowait, None)
+
+        worker = loop.run_in_executor(None, run)
+
+        async def generate() -> Any:
+            import json as _dump
+
+            while True:
+                item = await events.get()
+                if item is None:
+                    break
+                yield f"event: stage\ndata: {_dump.dumps(item, ensure_ascii=False)}\n\n"
+            try:
+                result = await worker
+            except Exception as exc:  # noqa: BLE001 - 错误也要以 SSE 事件交付
+                yield (
+                    "event: error\ndata: "
+                    + _dump.dumps({"error": repr(exc)}, ensure_ascii=False)
+                    + "\n\n"
+                )
+                return
+            downstream = result.downstream
+            yield (
+                "event: done\ndata: "
+                + _dump.dumps(
+                    {
+                        "duplicate": result.duplicate,
+                        "trace_id": result.envelope.trace_id,
+                        "user_id": result.user.id,
+                        "session_id": result.session.id,
+                        "ticket_id": getattr(getattr(downstream, "ticket", None), "id", None),
+                        "reply": getattr(downstream, "reply", None),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
+
+        return StreamingResponse(
+            generate(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     # --- Operator API ---
