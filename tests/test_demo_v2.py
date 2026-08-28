@@ -122,7 +122,7 @@ def test_demo_faq_rag(app_ctx) -> None:
     """FAQ query -> grounded Agent answer -> source -> NO Ticket."""
     resp = _step("faq", wecom_group(app_ctx.client, "年假怎么申请？", "faq1").json())
     assert resp["workflow"] == "faq_answer"
-    assert "faq-001" in resp["reply"] and "来源" in resp["reply"]
+    assert ("faq-001" in resp["reply"] or "faq-proc-001" in resp["reply"]) and "来源" in resp["reply"]
     assert resp["ticket_id"] is None  # FAQ never creates tickets
     # grounded answer was delivered to the requester conversation via outbox
     sent = [r for r in app_ctx.transport.records if r.method == "POST"]

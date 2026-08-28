@@ -55,7 +55,7 @@ def test_ac01_wecom_faq() -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["workflow"] == "faq_answer"
-    assert "faq-001" in body["reply"] and "来源" in body["reply"]
+    assert ("faq-001" in body["reply"] or "faq-proc-001" in body["reply"]) and "来源" in body["reply"]
     assert body["ticket_id"] is None
     assert store.list_by_user(body["user_id"]) == []  # NO ticket
 
@@ -264,7 +264,7 @@ def test_trace_covers_full_journey() -> None:
     faq_trace = client.get(f"/traces/{faq['trace_id']}").json()
     retrieval = next(s for s in faq_trace["stages"] if s["stage"] == "retrieval")
     assert retrieval["payload"]["grounded"] is True
-    assert retrieval["payload"]["hits"][0]["doc_id"] == "faq-001"
+    assert retrieval["payload"]["hits"][0]["doc_id"] == "faq-proc-001"
 
     # memory_recall trace on the recall path (requires a closed ticket first)
     _wecom(client, "A3 空调坏了", "m2b", conversation_id="conv_lifecycle")

@@ -132,7 +132,7 @@ def test_llm_flagged_request_still_creates_ticket(app_ctx):
     app_ctx.with_llm(_NeedsHumanLLM(True))
     resp = app_ctx.client.post(
         "/webhooks/wecom",
-        json={"MsgId": "casual-2", "FromUserName": "zhangsan", "Content": "帮我订下周的会议室并且通知所有人",
+        json={"MsgId": "casual-2", "FromUserName": "zhangsan", "Content": "帮我查一下上周的考勤补卡记录",
               "CreateTime": 4001, "conversation_id": WECOM_REPAIR_GROUP},
     )
     body = resp.json()

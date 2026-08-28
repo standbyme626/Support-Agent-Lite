@@ -16,6 +16,10 @@ os.environ["REAL_CHANNEL_NETWORK"] = "false"
 # Hermeticity: vector/rerank backends are external services — tests always
 # run keyword-only unless a test explicitly opts in.
 os.environ["KB_VECTOR_ENABLED"] = "false"
+# Hermeticity: production defaults to INTENT_EMBEDDING=setfit (.env), which
+# would load a ~2min CPU model into every test fixture. Tests stay on the
+# API-anchor semantic layer unless a test explicitly opts in.
+os.environ["INTENT_EMBEDDING"] = "api"
 
 import pytest
 from fastapi.testclient import TestClient

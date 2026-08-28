@@ -394,6 +394,101 @@ def test_ac07_illegal_tool_rejected(ctx) -> None:
     assert run.decision.reply_draft == "决策"  # decision still valid
 
 
+def test_ac07_invalid_args_missing_required_rejected(ctx) -> None:
+    fake = ScriptedLLM(
+        [make_decision(tool_request={"tool": "get_ticket_history", "args": {}}, reply="决策")],
+    )
+    from app.domain.envelope import InboundEnvelope
+
+    context = ContextBuilder(ctx["messages"]).build(
+        InboundEnvelope(channel="wecom", message_id="m1", channel_user_id="zhangsan", conversation_id="c1", text="A3 空调坏了"),
+        ctx["user"],
+        ctx["session"],
+        None,
+    )
+    run = SupportAgent(llm=fake, tools=_tools(ctx)).run(context)
+    assert len(run.tool_calls) == 1
+    assert run.tool_calls[0].ok is False
+    assert "missing-required:ticket_id" in run.tool_calls[0].observation  # schema layer, not executed
+    assert run.decision.reply_draft == "决策"
+
+
+def test_ac07_invalid_args_wrong_type_rejected(ctx) -> None:
+    fake = ScriptedLLM(
+        [make_decision(tool_request={"tool": "get_ticket_history", "args": {"ticket_id": 12345}}, reply="决策")],
+    )
+    from app.domain.envelope import InboundEnvelope
+
+    context = ContextBuilder(ctx["messages"]).build(
+        InboundEnvelope(channel="wecom", message_id="m1", channel_user_id="zhangsan", conversation_id="c1", text="A3 空调坏了"),
+        ctx["user"],
+        ctx["session"],
+        None,
+    )
+    run = SupportAgent(llm=fake, tools=_tools(ctx)).run(context)
+    assert len(run.tool_calls) == 1
+    assert run.tool_calls[0].ok is False
+    assert "wrong-type:ticket_id:int" in run.tool_calls[0].observation
+    assert run.steps == 1  # rejected, loop never re-enters
+    assert run.decision.reply_draft == "决策"
+
+
+def test_ac07_invalid_args_enum_violation_rejected(ctx) -> None:
+    fake = ScriptedLLM(
+        [make_decision(tool_request={"tool": "ticket_stats", "args": {"group_by": "assignee"}}, reply="决策")],
+    )
+    from app.domain.envelope import InboundEnvelope
+
+    context = ContextBuilder(ctx["messages"]).build(
+        InboundEnvelope(channel="wecom", message_id="m1", channel_user_id="zhangsan", conversation_id="c1", text="A3 空调坏了"),
+        ctx["user"],
+        ctx["session"],
+        None,
+    )
+    run = SupportAgent(llm=fake, tools=_tools(ctx)).run(context)
+    assert len(run.tool_calls) == 1
+    assert run.tool_calls[0].ok is False
+    assert "invalid-enum:group_by:assignee" in run.tool_calls[0].observation
+
+
+def test_ac07_undeclared_args_dropped(ctx) -> None:
+    fake = ScriptedLLM(
+        [
+            make_decision(tool_request={"tool": "search_knowledge", "args": {"query": "空调", "evil_key": "x"}}, summary="s"),
+            make_decision(reply="final"),
+        ],
+    )
+    from app.domain.envelope import InboundEnvelope
+
+    context = ContextBuilder(ctx["messages"]).build(
+        InboundEnvelope(channel="wecom", message_id="m1", channel_user_id="zhangsan", conversation_id="c1", text="空调怎么修"),
+        ctx["user"],
+        ctx["session"],
+        None,
+    )
+    run = SupportAgent(llm=fake, tools=_tools(ctx)).run(context)
+    assert len(run.tool_calls) == 1
+    assert run.tool_calls[0].ok is True  # undeclared key dropped, tool executed
+    assert run.tool_calls[0].args == {"query": "空调"}  # cleaned record, no evil_key
+    assert run.steps == 2
+
+
+def test_ac07_trace_records_full_tool_call(app_ctx) -> None:
+    from tests.fake_llm import ToolLLM
+
+    app_ctx.with_llm(ToolLLM("search_knowledge", {"query": "空调"}, make_decision(reply="已检索知识库，结论如下。")))
+    resp = wecom_group(app_ctx.client, "A3 空调坏了", "tool_trace")
+    body = resp.json()
+    trace = app_ctx.client.get(f"/traces/{body['trace_id']}").json()
+    agent_run = next(s for s in trace["stages"] if s["stage"] == "agent")
+    calls = agent_run["payload"]["tool_calls"]
+    assert len(calls) == 1
+    assert calls[0]["tool"] == "search_knowledge"
+    assert calls[0]["args"] == {"query": "空调"}
+    assert calls[0]["ok"] is True
+    assert isinstance(calls[0]["observation"], str) and len(calls[0]["observation"]) <= 200
+
+
 # --- AC-A08: structured decision validation ----------------------------------
 
 

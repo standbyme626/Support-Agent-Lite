@@ -30,3 +30,6 @@ include = ["app*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+markers = [
+    "slow: full-dataset evals that call real embedding APIs (5-10 min)",
+]

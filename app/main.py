@@ -264,6 +264,27 @@ def _op_trace_id() -> str:
     return new_id("trace_")
 
 
+def _build_intent_router():
+    """V2.2 intent router: cascade (rules fast-path + embedding semantic).
+
+    INTENT_EMBEDDING=setfit(生产默认目标):语义层换本地 SetFit 模型,
+    确定性、零 API 依赖(E2E 修复 1C)。其余/未启用:API 锚点余弦。
+    Degrades to the pure keyword router when anchors/credentials are
+    unavailable — routing must never break because embeddings are down.
+    """
+    from app.application.semantic_intent_router import CascadeIntentRouter
+
+    if os.environ.get("INTENT_EMBEDDING") == "setfit":
+        from app.application.setfit_intent import SetFitIntentRouter
+
+        semantic = SetFitIntentRouter()
+        if semantic.load():
+            print("[intent] semantic layer: setfit (local)")
+            return CascadeIntentRouter(semantic_router=semantic)
+        print("[intent] setfit unavailable, fallback to API anchors")
+    return CascadeIntentRouter()
+
+
 def build_workflow(
     conn: Any,
     store: TicketStore,
@@ -293,7 +314,7 @@ def build_workflow(
         summarizer=_llm_summarizer(llm) if llm is not None else None,
     )
     return SupportWorkflow(
-        router=IntentRouter(),
+        router=_build_intent_router(),
         retriever=retriever,
         ticket_service=TicketService(store),
         resolver=TicketResolver(TicketService(store), store),

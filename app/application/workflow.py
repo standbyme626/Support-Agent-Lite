@@ -29,7 +29,7 @@ from app.application.agent_tools import AgentToolPort
 from app.application.command_parser import CommandParser
 from app.application.context_builder import AgentContext, ContextBuilder, KnowledgeEvidence
 from app.application.conversation_service import ConversationService
-from app.application.intent_router import IntentRouter
+from app.application.intent_router import IntentRouter, has_support_guard_signal
 from app.application.memory_service import MemoryService
 from app.application.notification_service import SYSTEM_ACTOR
 from app.application.policy import PolicyValidator
@@ -357,9 +357,21 @@ class SupportWorkflow:
         if decision.intent == "support":
             return self._prepare_support(envelope, user, session, conversation)
         if decision.intent == "progress_query":
+            # Rule-layer hits carry explicit progress keywords (到哪了/好了吗/
+            # T编号) -> deterministic fast path. Pure embedding hits
+            # (anchor-match) are semantically ambiguous follow-ups; with
+            # exactly one active ticket they are continuations (AC-12) so
+            # the agent can still pick up urgency/expediting signals.
+            if decision.reason == "anchor-match" and len(self._tickets.active_tickets(user.id)) == 1:
+                return self._prepare_support(envelope, user, session, conversation)
             return self._prepare_progress(envelope, user, session, conversation)
-        if decision.intent == "other" and len(self._tickets.active_tickets(user.id)) == 1:
+        if decision.intent == "other" and (
+            len(self._tickets.active_tickets(user.id)) == 1
+            or has_support_guard_signal(envelope.text)
+        ):
             # Unclassifiable text with exactly one active ticket: continuation (AC-12).
+            # 业务保底护栏(E2E 修复 1A/1D):语义低分/embedding 异常降级时,文本含
+            # 设备/故障词 -> 保守建单。错建单有 HITL 兜底,漏单没有。
             return self._prepare_support(envelope, user, session, conversation)
         if decision.intent == "other" and self._has_llm():
             # Unclassifiable WITHOUT business signal: let the LLM converse.
@@ -391,6 +403,9 @@ class SupportWorkflow:
                 "hits": [{"doc_id": h.document.doc_id, "score": round(h.score, 3)} for h in answer.hits],
             },
         )
+        rerank = getattr(self._retriever, "last_rerank", None)
+        if rerank:
+            self._trace_event(envelope.trace_id, "rerank", rerank)
         evidence = self._evidence_from(answer.hits)
         context = self._build_context(envelope, user, session, None, conversation, knowledge_evidence=evidence)
         return PreparedOutcome(
@@ -1021,6 +1036,16 @@ class SupportWorkflow:
     ) -> PreparedOutcome:
         self._record_reply(reply, user, session, envelope)
         self._emit_reply_trace(envelope, kind, reply)
+        # E2E 修复 2:确定性回复(查进度/clarify/确认/无单)此前只写 messages 与
+        # trace,从不投递 -> 用户收不到任何回复。与 agent 路径同款投递。
+        if self._actions is not None:
+            self._actions.conversation_reply(
+                channel=envelope.channel,
+                conversation_id=envelope.conversation_id,
+                text=reply,
+                trace_id=envelope.trace_id,
+                source_event_id=f"deterministic:{envelope.message_id or ''}",
+            )
         return PreparedOutcome(
             kind=kind, reply=reply, ticket=ticket, result=WorkflowResult(kind=kind, reply=reply, ticket=ticket)
         )
@@ -1060,7 +1085,15 @@ class SupportWorkflow:
                 "model": run.model,
                 "latency_ms": run.latency_ms,
                 "steps": run.steps,
-                "tool_calls": [t.tool for t in run.tool_calls],
+                "tool_calls": [
+                    {
+                        "tool": t.tool,
+                        "args": t.args,
+                        "ok": t.ok,
+                        "observation": (t.observation or "")[:200],
+                    }
+                    for t in run.tool_calls
+                ],
                 "tool_call_count": len(run.tool_calls),
                 "skill_key": run.skill_key,
                 "injected_prompt_chars": run.injected_prompt_chars,

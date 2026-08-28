@@ -28,6 +28,7 @@ from app.application.agent_tools import (
     AgentToolDenied,
     AgentToolPort,
     ToolCall,
+    validate_tool_args,
 )
 from app.application.context_builder import AgentContext
 from app.application.prompt_registry import PromptRegistry, get_registry
@@ -218,6 +219,13 @@ class SupportAgent:
                 if tool_name not in whitelist:
                     tool_calls.append(ToolCall(tool=tool_name, args=dict(args), observation="denied", ok=False))
                     break  # deny and keep the (validated) decision
+                clean_args, issue = validate_tool_args(tool_name, args)
+                if clean_args is None:
+                    tool_calls.append(
+                        ToolCall(tool=tool_name, args=dict(args), observation=f"invalid_args:{issue}", ok=False)
+                    )
+                    break  # schema layer: reject, never execute malformed args
+                args = clean_args
                 try:
                     result = self._tools.call(
                         tool_name,

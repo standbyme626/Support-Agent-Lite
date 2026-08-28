@@ -157,6 +157,46 @@ TOOL_JSON_SCHEMAS: list[dict] = [
 ]
 
 
+def validate_tool_args(tool: str, args: object) -> tuple[dict | None, str]:
+    """Validate LLM-proposed args against the tool's declared JSON Schema.
+
+    Industry-standard schema layer (OpenAI strict mode / Anthropic schema
+    conformance): deterministic, <1ms, runs in the pre-execution hook.
+    Rejects wrong types, missing required fields and out-of-enum values;
+    silently drops undeclared keys. Returns (cleaned_args, None) or
+    (None, reason).
+    """
+    schema = next((s for s in TOOL_JSON_SCHEMAS if s["name"] == tool), None)
+    if schema is None:
+        return None, f"unknown-tool:{tool}"
+    parameters = schema.get("parameters") or {}
+    properties = parameters.get("properties") or {}
+    required = parameters.get("required") or []
+    if not isinstance(args, dict):
+        return None, "args-not-object"
+    for key in required:
+        if key not in args:
+            return None, f"missing-required:{key}"
+    cleaned: dict[str, object] = {}
+    for key, value in args.items():
+        prop = properties.get(key)
+        if prop is None:
+            continue
+        if "enum" in prop and value not in prop["enum"]:
+            return None, f"invalid-enum:{key}:{value}"
+        expected = prop.get("type", "string")
+        valid = {
+            "string": isinstance(value, str),
+            "integer": isinstance(value, int) and not isinstance(value, bool),
+            "number": isinstance(value, (int, float)) and not isinstance(value, bool),
+            "boolean": isinstance(value, bool),
+        }.get(expected, True)
+        if not valid:
+            return None, f"wrong-type:{key}:{type(value).__name__}"
+        cleaned[key] = value
+    return cleaned, None
+
+
 class AgentToolDenied(RuntimeError):
     """Raised when the model asks for a tool outside the whitelist."""
 

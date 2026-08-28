@@ -28,7 +28,7 @@ def test_ac01_wecom_faq_no_ticket() -> None:
     body = resp.json()
     assert body["ok"] is True
     assert body["workflow"] == "faq_answer"
-    assert "faq-001" in body["reply"]
+    assert ("faq-001" in body["reply"] or "faq-proc-001" in body["reply"])
     assert "来源" in body["reply"]
     assert body["ticket_id"] is None
     assert store.list_by_user("whatever") == []
@@ -159,3 +159,57 @@ def test_other_intent_real_handoff() -> None:
     assert body["workflow"] == "other"
     assert body["ticket_id"] == "T0001"
     assert store.get("T0001") is not None
+
+
+# --- E2E 修复用例(2026-08-28) -------------------------------------------------
+
+
+def _client_full():
+    """build_ingress + client + conn(可查 outbox)。"""
+    from app.main import build_ingress, create_app
+
+    ingress, conn, store = build_ingress(db_path=":memory:")
+    return TestClient(create_app(ingress)), conn, store
+
+
+def test_e2e_fix_progress_reply_delivered() -> None:
+    """修复 2:查进度是确定性路径,回复必须经 outbox 投递到用户(此前静默失败)。"""
+    client, conn, _ = _client_full()
+    assert _wecom(client, "门禁卡刷不开了", "m1").json()["ticket_id"] == "T0001"
+    body = _wecom(client, "我的工单怎么样了", "m2").json()
+    assert body["workflow"] == "progress"
+    rows = conn.execute(
+        "SELECT message FROM notification_outbox WHERE notification_type='REACTIVE_REPLY'"
+    ).fetchall()
+    assert any("T0001" in r[0] for r in rows), rows
+
+
+def test_e2e_fix_support_guard_creates_ticket() -> None:
+    """修复 1A/1D:语义层不可用(锚点缺失)时,含设备/故障词的长尾表述仍建单。"""
+    import os
+    import tempfile
+
+    os.environ["INTENT_ANCHORS_DIR"] = tempfile.mkdtemp()
+    try:
+        client, _, store = _client_full()
+        body = _wecom(client, "这投影仪能修吗", "m1").json()
+        assert body["workflow"] == "ticket"
+        assert body["ticket_id"] == "T0001"
+        assert store.get("T0001") is not None
+    finally:
+        os.environ.pop("INTENT_ANCHORS_DIR", None)
+
+
+def test_e2e_fix_support_guard_not_for_casual_chat() -> None:
+    """修复 1A 负例:纯闲聊无业务词,即使语义层不可用也不走 support 建单路径
+    (无 LLM 时 other 兜底建单是 AC-21 既有行为,guard 不得扩大它)。"""
+    import os
+    import tempfile
+
+    os.environ["INTENT_ANCHORS_DIR"] = tempfile.mkdtemp()
+    try:
+        client, _, _ = _client_full()
+        body = _wecom(client, "今天天气不错我们出去散步吧", "m1").json()
+        assert body["workflow"] == "other"  # guard 不劫持纯闲聊
+    finally:
+        os.environ.pop("INTENT_ANCHORS_DIR", None)

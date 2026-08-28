@@ -73,3 +73,24 @@ def test_low_confidence_routes_to_other_deterministically() -> None:
     assert decision.is_low_confidence is True
     assert decision.reason.startswith("below-threshold")
 
+
+
+# --- E2E 修复用例(2026-08-28) -------------------------------------------------
+
+
+def test_support_keyword_card_jam() -> None:
+    assert route("打印机卡纸了").intent == "support"
+
+
+def test_progress_keyword_not_fixed_yet() -> None:
+    assert route("投影仪还没修好吗").intent == "progress_query"
+    assert route("麻烦催一下工单").intent == "progress_query"
+
+
+def test_guard_signal_detection() -> None:
+    from app.application.intent_router import has_support_guard_signal
+
+    assert has_support_guard_signal("这投影仪能修吗")
+    assert has_support_guard_signal("门禁卡刷不开了")
+    assert not has_support_guard_signal("今天天气不错我们出去散步吧")
+    assert not has_support_guard_signal("你好")

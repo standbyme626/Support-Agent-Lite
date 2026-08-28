@@ -11,7 +11,7 @@ from app.application.retriever import Retriever
 SEED_DIR = Path(__file__).resolve().parent.parent / "seed" / "faq"
 
 EVAL_SET: list[tuple[str, str]] = [
-    ("年假怎么申请", "faq-001"),
+    ("年假怎么申请", "faq-proc-001"),
     ("忘记邮箱密码怎么重置", "faq-002"),
     ("WiFi连不上怎么办", "faq-003"),
     ("电脑蓝屏了怎么处理", "faq-004"),

@@ -41,7 +41,9 @@ class PipelineState:
 
 
 def _node_classify(state: PipelineState) -> dict:
-    decision = IntentRouter().route(state.question)
+    from app.application.semantic_intent_router import CascadeIntentRouter
+
+    decision = CascadeIntentRouter().route(state.question)
     return {
         "intent": decision.intent,
         "intent_reason": decision.reason,

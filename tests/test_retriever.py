@@ -22,7 +22,7 @@ def test_search_returns_ranked_hits() -> None:
     retriever = Retriever(SEED_DIR)
     hits = retriever.search("年假怎么申请", top_k=3)
     assert len(hits) <= 3
-    assert hits[0].document.doc_id == "faq-001"
+    assert hits[0].document.doc_id == "faq-proc-001"
     assert hits[0].score >= hits[-1].score
 
 
@@ -31,9 +31,9 @@ def test_answer_grounded_with_source_attribution() -> None:
     retriever = Retriever(SEED_DIR)
     answer = retriever.answer("年假怎么申请")
     assert answer is not None
-    assert "faq-001" in answer.text
+    assert "faq-proc-001" in answer.text
     assert "来源" in answer.text
-    assert answer.hits[0].source == "faq:faq-001"
+    assert answer.hits[0].source == "faq:faq-proc-001"
 
 
 def test_answer_returns_none_for_out_of_domain() -> None:

@@ -36,11 +36,15 @@ class SiliconFlowEmbedding:
         base_url: str | None = None,
         model: str | None = None,
         batch_size: int = 32,
+        timeout: float = 60.0,
+        retries: int = 3,
     ) -> None:
         self.api_key = api_key or os.environ.get("SILICONFLOW_API_KEY", "")
         self.base_url = (base_url or os.environ.get("SILICONFLOW_BASE_URL") or "").rstrip("/")
         self.model = model or os.environ.get("SILICONFLOW_EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")
         self.batch_size = batch_size
+        self.timeout = timeout
+        self.retries = retries
 
     @property
     def model_name(self) -> str:
@@ -55,13 +59,13 @@ class SiliconFlowEmbedding:
         for start in range(0, len(texts), self.batch_size):
             chunk = texts[start : start + self.batch_size]
             last: Exception | None = None
-            for attempt in range(3):
+            for attempt in range(self.retries):
                 try:
                     resp = httpx.post(
                         f"{self.base_url}/embeddings",
                         headers={"Authorization": f"Bearer {self.api_key}"},
                         json={"model": self.model, "input": chunk},
-                        timeout=60,
+                        timeout=self.timeout,
                     )
                     resp.raise_for_status()
                     data = resp.json()
