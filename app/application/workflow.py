@@ -63,6 +63,10 @@ _NO_ANSWER_REPLY = (
 )
 
 _OTHER_REPLY = "您的问题需要人工支持处理，我已记录下来，会尽快由专人跟进。"
+_OTHER_CLARIFY_REPLY = (
+    "您的消息我暂时没能理解。请描述具体故障（如「A3 空调坏了」），"
+    "或发送工单号（如「T0001 进度」）查询处理进展。"
+)
 _STAFF_OTHER_REPLY = "已收到消息。如需操作工单请使用命令（如：认领 T0002 / T0002 已修复 解决）。"
 
 _SELF_INTRO_REPLY = (
@@ -589,16 +593,13 @@ class SupportWorkflow:
             # AC-16: shared staff conversations never get implicit tickets;
             # reply neutrally without claiming any follow-up.
             return self._deterministic(envelope, user, session, WorkflowKind.OTHER, _STAFF_OTHER_REPLY)
-        # §41/AC-21 honesty: a reply that claims "专人跟进" must back a real
-        # ticket with an operator work item — never a fake handoff.
-        ticket = self._create_handoff_ticket(envelope, user, conversation)
-        self._bind_session_ticket(session, ticket)
-        self._trace_event(
-            envelope.trace_id,
-            "ticket",
-            {"resolution": "other_handoff", "ticket_id": ticket.id},
-        )
-        return self._deterministic(envelope, user, session, WorkflowKind.OTHER, _OTHER_REPLY, ticket)
+        # No-LLM degradation must NOT spawn tickets for unclassifiable text
+        # (the T0005 "/help" ticket-spam era bug). Guard terms and the
+        # single-active-ticket continuation already routed real requests to
+        # support earlier; whatever reaches here is genuinely unclassifiable
+        # — ask for a clearer description instead of fabricating work
+        # (AC-21 honesty: this reply claims no follow-up, so no ticket).
+        return self._deterministic(envelope, user, session, WorkflowKind.OTHER, _OTHER_CLARIFY_REPLY)
 
     def _prepare_operator(
         self, envelope: InboundEnvelope, user: User, session: Session, conversation: Conversation

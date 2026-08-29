@@ -150,15 +150,17 @@ def test_no_answer_protection_for_low_confidence() -> None:
     assert [t.id for t in tickets] == ["T0001"]
 
 
-def test_other_intent_real_handoff() -> None:
-    """AC-21 semantics apply to the `other` branch too: a truthful '专人跟进'
-    reply must back a real ticket + operator work item (no fake handoff)."""
+def test_other_intent_clarifies_without_ticket() -> None:
+    """No-LLM `other` must NOT spawn tickets (the T0005 '/help' spam bug):
+    the reply asks for a clearer description and claims no follow-up, so no
+    handoff ticket is fabricated (AC-21 honesty, 2026-08-29 contract)."""
     client, store = _client()
-    resp = _wecom(client, "给我讲个笑话吧", "m1")  # unclassifiable request (was: greeting)
+    resp = _wecom(client, "给我讲个笑话吧", "m1")  # unclassifiable request
     body = resp.json()
     assert body["workflow"] == "other"
-    assert body["ticket_id"] == "T0001"
-    assert store.get("T0001") is not None
+    assert body["ticket_id"] is None
+    assert "没法理解" in body["reply"] or "没能理解" in body["reply"]
+    assert store.list_by_user(body["user_id"]) == []
 
 
 # --- E2E 修复用例(2026-08-28) -------------------------------------------------

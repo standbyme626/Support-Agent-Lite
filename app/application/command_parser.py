@@ -13,8 +13,13 @@ _TICKET_RE = re.compile(r"T\d{4,}")
 
 CLAIM_KEYWORDS = ("认领", "接手", "处理中")
 RESOLVE_KEYWORDS = ("解决", "完成", "处理好了", "已修复", "已处理", "搞定")
-CONFIRM_KEYWORDS = ("确认", "已恢复", "恢复了", "好了", "可以了", "没问题了", "修好了")
-REJECT_RESOLUTION_KEYWORDS = ("还没好", "没有好", "还是不行", "没解决", "未解决", "还有问题", "不好")
+# Confirmation needs STRONG intent: "好了"/"可以了"/"修好了" were removed —
+# they substring-match progress questions ("处理好了吗"/"修好了吗") and could
+# auto-close a RESOLVED ticket that the user was only asking about.
+CONFIRM_KEYWORDS = ("确认", "已恢复", "恢复了", "没问题了")
+# "不好" removed: matches everyday moods ("心情不好"), not rejection of a
+# resolution. Real rejections name the unresolved state.
+REJECT_RESOLUTION_KEYWORDS = ("还没好", "没有好", "还是不行", "没解决", "未解决", "还有问题")
 ESCALATE_KEYWORDS = ("升级", "上报", "加急")
 FORCE_CLOSE_KEYWORDS = ("强制关闭", "force-close", "强制关闭")
 APPROVE_KEYWORDS = ("同意", "批准", "approve")
