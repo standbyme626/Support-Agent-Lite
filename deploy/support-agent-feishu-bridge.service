@@ -1,0 +1,18 @@
+# Feishu WebSocket long-connection bridge — production unit
+# (installed to /etc/systemd/system). Forwards official Feishu events to the
+# local API webhook; no public callback URL needed.
+[Unit]
+Description=Support Agent Lite Feishu WS bridge
+After=network.target support-agent-api.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kkk/Project/support-agent-platform
+Environment=HOME=/root
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/kkk/Project/support-agent-platform/.venv/bin/python scripts/feishu_ws_bridge.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -208,3 +208,11 @@
 - 张三 4 个遗留 OPEN 工单会持续触发多单 clarify 挡新报修：T0005"/help"、T0010"你可以做什么"是纯噪音建议清掉；T0003（空调）/T0004（电脑）是 8/24-25 测试期旧单，确认后可走 force_close+审批链清理。
 - workflow 懒构建：SetFit 在首个 webhook 请求才加载（冷缓存 ~2min/热 ~5s），建议 `create_app` 加 startup 预热钩子。
 - 性能实测：agent 建单轮 12.8s（远好于记录的 20~122s，可能网络/模型波动），确定性轮 <1s。
+
+### 2026-08-29 晚：六项修复全部落地（全量 384 绿，生产已切换新代码）
+1. **测试封闭性破洞（重要发现）**：conftest 强制 `INTENT_EMBEDDING=api` 但没屏蔽 key → .env 的 SILICONFLOW_API_KEY 泄入测试 → 语义层真实调外网 API → `test_llm_flagged_request_still_creates_ticket` 随机红（1B 把 support 阈值 0.62→0.55，"查考勤补卡"锚点分落在两阈值之间+embedding 非确定性）。修复：conftest 置空 `SILICONFLOW_API_KEY`；1B 边界问题（非 IT 文本建单）并入 P1 扩训处理。
+2. **startup 预热**：`create_app` 加 startup 钩子，SetFit/KB/意图层在端口绑定前加载完（日志 `[startup] runtime prebuilt`），首条消息不再背冷启动。
+3. **进程看护**：正式 unit `deploy/*.service`（Restart=on-failure+开机自启）已安装并 enable --now（替代 transient unit）；`scripts/ops/health_probe.sh` cron 每分钟探活+自动重启（告警落 `runtime/ops/health_alerts.log`）；`scripts/ops/backup_db.sh` cron 每日 3:30 在线备份到 `runtime/backups/`（留 7 天）；.env 已 chmod 600。
+4. **dispatch 后台化**：webhook/REST 不再被飞书出站 HTTP 阻塞（`IngressService(auto_dispatch=False)` + FastAPI BackgroundTasks）；`DispatchWorker`（`SUPPORT_AGENT_DISPATCH_WORKER=1`，写在 unit 的 Environment=，不进 .env 防泄入测试）每 30s 扫 outbox 重试，失败投递不再依赖下一条消息捎带。`test_outbox_survives_delivery_failure` 契约更新：断言 attempt 历史记录失败 + 后台重试治愈。
+5. **no-LLM other 降级改澄清**：`_prepare_other` 不再为无法分类文本造 handoff 工单（T0005"/help"垃圾单根源），改澄清式回复；`test_workflow.py::test_other_intent_real_handoff` 契约同步更新为 `test_other_intent_clarifies_without_ticket`。
+6. **确认/驳回词收紧**：CONFIRM 移除"好了/可以了/修好了"（子串误中"处理好了吗/修好了吗"进度问句会误关单），REJECT 移除"不好"（误中"心情不好"）；新增 `tests/test_confirmation_guard.py` 4 例。

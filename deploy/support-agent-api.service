@@ -1,0 +1,22 @@
+# Support Agent Lite API — production unit (installed to /etc/systemd/system).
+# Deploy: cp deploy/support-agent-api.service /etc/systemd/system/ \
+#   && systemctl daemon-reload && systemctl enable --now support-agent-api
+[Unit]
+Description=Support Agent Lite API (uvicorn, 127.0.0.1:8322)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/kkk/Project/support-agent-platform
+Environment=HOME=/root
+Environment=PYTHONUNBUFFERED=1
+# Background outbox dispatcher: retry pending/failed notifications every 30s
+# instead of piggybacking on the next inbound message. Unit-scoped on purpose:
+# tests must never inherit it from .env.
+Environment=SUPPORT_AGENT_DISPATCH_WORKER=1
+ExecStart=/home/kkk/Project/support-agent-platform/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8322
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
