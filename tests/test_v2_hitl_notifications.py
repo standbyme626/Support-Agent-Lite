@@ -159,14 +159,24 @@ def test_outbox_survives_delivery_failure(app_ctx, monkeypatch) -> None:
     from app.infrastructure.repositories import NotificationOutboxRepository
 
     outbox = NotificationOutboxRepository(app_ctx.conn)
-    failed = [r for r in outbox.pending() if r.status.value == "pending"]
     all_records = outbox.list_by_ticket("T0001")
     # business committed (ticket exists) AND the delivery failure was
-    # recorded, nothing lost
-    assert any(r.status.value == "failed" for r in all_records)
+    # recorded in the immutable attempt history, nothing lost
+    assert all_records
+    assert any(
+        attempt["success"] is False
+        and ("network_down" in (attempt["result_code"] or "") or "network_down" in (attempt["error"] or ""))
+        for r in all_records
+        for attempt in outbox.attempts(r.id)
+    )
     assert len(all_records) == len([r for r in all_records if r.attempt_count >= 1])
 
-    # retry: delivery succeeds now
-    results = ops.notifications.dispatch()
-    assert any("sent" in r for r in results)
+    # background dispatch (scheduled by the webhook endpoint) already retried
+    # the failed sends and healed them — a transient channel failure never
+    # waits for the next inbound message any more (2026-08-29 fix)
     assert all(r.status.value == "sent" for r in outbox.list_by_ticket("T0001"))
+
+    # an explicit dispatch pass is still safe/idempotent on healed records
+    results = ops.notifications.dispatch()
+    assert all(r.status.value == "sent" for r in outbox.list_by_ticket("T0001"))
+    assert isinstance(results, list)

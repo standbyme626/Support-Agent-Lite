@@ -67,6 +67,7 @@ class IngressService:
         conversations: ConversationService | None = None,
         notifications: NotificationService | None = None,
         workflow: SupportWorkflow | None = None,
+        auto_dispatch: bool = True,
     ) -> None:
         self._adapters = adapters
         self._identity = identity
@@ -77,6 +78,11 @@ class IngressService:
         self._conversations = conversations
         self._notifications = notifications
         self._workflow = workflow
+        # auto_dispatch=True (default, direct/test callers): dispatch runs
+        # synchronously at the end of process(). auto_dispatch=False (the
+        # production app): the HTTP layer schedules dispatch as a background
+        # task so outbound channel HTTP never blocks the webhook response.
+        self._auto_dispatch = auto_dispatch
         self._processing = InboundProcessingStore(idempotency._conn)  # noqa: SLF001
 
     def process(self, channel: str, payload: dict, on_stage: Callable[[str, dict], None] | None = None) -> IngressResult:
@@ -230,7 +236,7 @@ class IngressService:
                 },
             )
 
-        if self._notifications is not None:
+        if self._notifications is not None and self._auto_dispatch:
             self._notifications.dispatch()
         return IngressResult(
             envelope=envelope,
@@ -282,7 +288,7 @@ class IngressService:
                 self._release_key(key)
             raise
 
-        if self._notifications is not None:
+        if self._notifications is not None and self._auto_dispatch:
             self._notifications.dispatch()
         return IngressResult(
             envelope=envelope,

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 
@@ -354,12 +354,16 @@ def build_ingress(
     seed_dir: str | Path = _SEED_DIR,
     llm: LLMClient | None = None,
     outbound_clients: dict | None = None,
+    auto_dispatch: bool = True,
 ) -> tuple[IngressService, Any, TicketStore]:
     """Assemble the two-phase ingress pipeline (V2.1).
 
     The V2.1 pipeline runs the workflow in prepare/run-agent/apply phases
     so the LLM never holds the database write lock. A legacy `downstream`
     callable is still accepted and runs in the single-transaction mode.
+    `auto_dispatch=False` (production app) hands delivery to the HTTP
+    layer (background task + dispatch worker) instead of blocking the
+    webhook response on outbound channel HTTP.
     """
     conn = connect(db_path)
     apply_migrations(conn)
@@ -382,6 +386,7 @@ def build_ingress(
         conversations=core["conversations"],
         notifications=core["notifications"],
         workflow=workflow,
+        auto_dispatch=auto_dispatch,
     ), conn, store
 
 
@@ -402,11 +407,47 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
     app.state.ingress = ingress
     app.state.ops = ops
 
+    @app.on_event("startup")
+    def _warm_up() -> None:
+        """Pre-build the runtime at process start (P0.5 cold-start fix).
+
+        Without this, the lazy first-request build would load the KB, the
+        SetFit intent model and the LLM client during the FIRST inbound
+        message — bridge timeout (15s) hits, Feishu redelivers. Build
+        eagerly here so the port opens only when the app is warm. Failure
+        must not kill the server: the lazy per-request path still retries.
+        """
+        if app.state.ingress is not None:
+            return
+        try:
+            _services()
+            print("[startup] runtime prebuilt (workflow/KB/intent layer warm)")
+        except Exception as exc:  # noqa: BLE001 - degrade to lazy build
+            print(f"[startup] warm-up failed, falling back to lazy build: {exc!r}")
+
+        if os.environ.get("SUPPORT_AGENT_DISPATCH_WORKER") == "1":
+            try:
+                from app.application.notification_service import DispatchWorker
+
+                worker = DispatchWorker(_ops().notifications)
+                worker.start()
+                app.state.dispatch_worker = worker
+                print("[startup] dispatch worker on (30s outbox sweep)")
+            except Exception as exc:  # noqa: BLE001 - retry still piggybacks
+                print(f"[startup] dispatch worker failed to start: {exc!r}")
+
+    @app.on_event("shutdown")
+    def _shutdown() -> None:
+        worker = getattr(app.state, "dispatch_worker", None)
+        if worker is not None:
+            worker.stop()
+
     def _services() -> None:
         if app.state.ingress is None:
             default_db = os.environ.get("SUPPORT_AGENT_DB", "runtime/support_agent.db")
             ingress, conn, store = build_ingress(
-                db_path=default_db, seed_dir=_SEED_DIR, llm=llm_client_from_env()
+                db_path=default_db, seed_dir=_SEED_DIR, llm=llm_client_from_env(),
+                auto_dispatch=False,
             )
             app.state.ingress = ingress
             app.state.ops = build_ops(conn, store)
@@ -533,7 +574,9 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
     # --- channel webhooks (official protocol verification first) ---
 
     @app.api_route("/webhooks/{channel}", methods=["GET", "POST"])
-    async def webhook(channel: str, request: Request) -> JSONResponse:
+    async def webhook(
+        channel: str, request: Request, background_tasks: BackgroundTasks
+    ) -> JSONResponse:
         try:
             adapter = _ingress()._adapters[channel]  # noqa: SLF001
             query = dict(request.query_params)
@@ -551,6 +594,12 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
             raise HTTPException(status_code=400, detail=f"{exc.code}: {exc}") from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=f"unknown channel: {channel}") from exc
+
+        if not result.duplicate:
+            # Outbound channel HTTP leaves the request path (P0 fix): the
+            # response returns as soon as business processing commits; the
+            # dispatch worker / background task owns delivery + retries.
+            background_tasks.add_task(_dispatch)
 
         status_code = 200 if not result.duplicate else 202
         downstream = result.downstream
@@ -657,7 +706,7 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
     # --- Operator API ---
 
     @app.post("/tickets/{ticket_id}/claim")
-    def claim(ticket_id: str, payload: dict | None = None) -> Any:
+    def claim(background_tasks: BackgroundTasks, ticket_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
             actor = _actor(body, role=UserRole.OPERATOR, endpoint="claim")
@@ -672,11 +721,12 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        _dispatch()
+        if background_tasks is not None:
+            background_tasks.add_task(_dispatch)
         return _ticket_response(outcome.ticket)
 
     @app.post("/tickets/{ticket_id}/resolve")
-    def resolve(ticket_id: str, payload: dict | None = None) -> Any:
+    def resolve(background_tasks: BackgroundTasks, ticket_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
             actor = _actor(body, role=UserRole.OPERATOR, endpoint="resolve")
@@ -690,11 +740,12 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        _dispatch()
+        if background_tasks is not None:
+            background_tasks.add_task(_dispatch)
         return _ticket_response(outcome.ticket)
 
     @app.post("/tickets/{ticket_id}/close")
-    def close(ticket_id: str, payload: dict | None = None) -> Any:
+    def close(background_tasks: BackgroundTasks, ticket_id: str, payload: dict | None = None) -> Any:
         """Legacy REST close (DEPRECATED): an unapproved direct close is no
         longer possible (V2.1 closure fix). This endpoint now requires a
         reason and routes through the FORCE_CLOSE approval pipeline; the
@@ -719,14 +770,15 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        _dispatch()
+        if background_tasks is not None:
+            background_tasks.add_task(_dispatch)
         approval = _ops().approvals.get(outcome.approval_id)
         if approval is None:
             raise HTTPException(status_code=404, detail="approval not found")
         return approval
 
     @app.post("/tickets/{ticket_id}/escalate")
-    def escalate(ticket_id: str, payload: dict | None = None) -> Any:
+    def escalate(background_tasks: BackgroundTasks, ticket_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
             actor = _actor(body, role=UserRole.OPERATOR, endpoint="escalate")
@@ -744,7 +796,8 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        _dispatch()
+        if background_tasks is not None:
+            background_tasks.add_task(_dispatch)
         approval = _ops().approvals.get(outcome.approval_id)
         if approval is None:
             raise HTTPException(status_code=404, detail="approval not found")
@@ -767,7 +820,7 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
         return _ops().memory.list(user_id, parsed_kind)
 
     @app.post("/approvals/{approval_id}/approve")
-    def approve(approval_id: str, payload: dict | None = None) -> Any:
+    def approve(background_tasks: BackgroundTasks, approval_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
             actor = _actor(body, role=UserRole.APPROVER, endpoint="approve")
@@ -778,14 +831,15 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        _dispatch()
+        if background_tasks is not None:
+            background_tasks.add_task(_dispatch)
         approval = _ops().approvals.get(approval_id)
         if approval is None:
             raise HTTPException(status_code=404, detail="approval not found")
         return approval
 
     @app.post("/approvals/{approval_id}/reject")
-    def reject(approval_id: str, payload: dict | None = None) -> Any:
+    def reject(background_tasks: BackgroundTasks, approval_id: str, payload: dict | None = None) -> Any:
         try:
             body = payload or {}
             actor = _actor(body, role=UserRole.APPROVER, endpoint="reject")
@@ -799,7 +853,8 @@ def create_app(ingress: IngressService | None = None, ops: OpsServices | None = 
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        _dispatch()
+        if background_tasks is not None:
+            background_tasks.add_task(_dispatch)
         approval = _ops().approvals.get(approval_id)
         if approval is None:
             raise HTTPException(status_code=404, detail="approval not found")

@@ -6,6 +6,7 @@ after commit; simulated transport failures keep the outbox retryable.
 """
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from uuid import uuid4
 
@@ -16,6 +17,11 @@ from app.domain.ticket import Ticket
 from app.infrastructure.repositories import NotificationOutboxRepository
 
 SYSTEM_ACTOR = "user_system"
+
+# How long a delivery may stay un-retried. The worker exists so a failed
+# send NEVER depends on the next inbound message arriving (production:
+# SUPPORT_AGENT_DISPATCH_WORKER=1 in the unit file, 30s cadence).
+DEFAULT_DISPATCH_INTERVAL = 30.0
 
 
 def new_id(prefix: str) -> str:
@@ -154,3 +160,44 @@ def ticket_public_private_messages(ticket: Ticket, requester_name: str, status_l
             f"优先级：{ticket.priority or 'P3'}"
         ),
     }
+
+
+class DispatchWorker:
+    """Periodic outbox sweeper (daemon thread).
+
+    Retries pending/failed deliveries on a fixed cadence so a transient
+    channel failure heals by itself. Failures inside sweep() are swallowed:
+    the next tick retries anyway. Started only when the production unit
+    sets SUPPORT_AGENT_DISPATCH_WORKER=1 — tests stay single-threaded.
+    """
+
+    def __init__(self, notifications: NotificationService, interval: float = DEFAULT_DISPATCH_INTERVAL) -> None:
+        self._notifications = notifications
+        self._interval = interval
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def sweep(self) -> list[str]:
+        """One dispatch pass (also handy for tests/ops)."""
+        try:
+            return self._notifications.dispatch()
+        except Exception:  # noqa: BLE001 - never die on one bad pass
+            return []
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+
+        def _loop() -> None:
+            while not self._stop.wait(self._interval):
+                self.sweep()
+
+        self._stop.clear()
+        self._thread = threading.Thread(target=_loop, name="dispatch-worker", daemon=True)
+        self._thread.start()
+
+    def stop(self, timeout: float = 5.0) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=timeout)
+            self._thread = None
