@@ -20,6 +20,12 @@ os.environ["KB_VECTOR_ENABLED"] = "false"
 # would load a ~2min CPU model into every test fixture. Tests stay on the
 # API-anchor semantic layer unless a test explicitly opts in.
 os.environ["INTENT_EMBEDDING"] = "api"
+# Hermeticity: blank the embedding credential so the API-anchor semantic
+# layer degrades to rules INSIDE tests even when .env exports a real key
+# (main._load_env_file uses setdefault, so a pre-set empty value wins).
+# Without this, anchor matching hits the real SiliconFlow API and scores
+# straddle the asymmetric thresholds — env-dependent flakes (2026-08-29).
+os.environ["SILICONFLOW_API_KEY"] = ""
 
 import pytest
 from fastapi.testclient import TestClient
