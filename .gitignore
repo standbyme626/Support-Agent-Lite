@@ -28,3 +28,6 @@ opencode.json
 # datasets (raw data, downloaded from HuggingFace)
 /datasets/*
 !/datasets/README.md
+
+# local training artifacts
+checkpoints/

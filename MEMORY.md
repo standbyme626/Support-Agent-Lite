@@ -2,9 +2,9 @@
 
 > 本文件是项目的**长期记忆**：给 AI 的阅读上下文 + 主人的运维/进度备忘录。有新进展就往里加。
 >
-> 更新日期：2026-08-28
+> 更新日期：2026-08-29
 > 位置：/home/kkk/Project/support-agent-platform
-> 状态：真实飞书群运行中（张三报修 / 于松泽处理），V2.2 语义意图路由已落地，**SetFit 已接入生产语义层（INTENT_EMBEDDING=setfit）**，E2E 真人测试 4 缺陷全部修复（24/24 绿）
+> 状态：真实飞书群运行中（张三报修 / 于松泽处理），V2.2 语义意图路由已落地，**SetFit 已接入生产语义层（INTENT_EMBEDDING=setfit）**，E2E 真人测试 4 缺陷全部修复（24/24 绿）；**2026-08-29 P0 上线落地完成：e7e6106 已部署生产并冒烟通过（3/3），服务以 systemd 常驻 unit 运行**
 
 ---
 
@@ -183,3 +183,28 @@
 - setfit 1.1.3
 
 ---
+---
+
+## 十、P0 上线落地与生产冒烟（2026-08-29）
+
+### 服务常驻恢复（关键教训）
+- **发现生产 API 自 8/28 晚起就没在跑**：ws_bridge（8/25 启动的 session 遗留进程）一直往 `127.0.0.1:8322` 死端口转发，最后一条真实用户消息停在 8/26 20:50。"生产跑旧代码"的真实版本是"生产根本没在跑"。
+- 现两个进程均为 systemd transient unit（`systemctl status` 可查）：
+  - `support-agent-api.service`：`.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8322`
+  - `support-agent-feishu-bridge.service`：`.venv/bin/python scripts/feishu_ws_bridge.py`
+  - ⚠️ transient unit **重启后即失**，需落正式 `.service` 文件（WantedBy=multi-user.target + Restart=on-failure）
+- 部署即代码：本机=生产机，git push（origin 同步至 e7e6106）+ 重启进程即部署。向量索引 8/28 已重建（540=KB 540），无需重跑。
+
+### 生产冒烟（3 条模拟 webhook，全过）
+1. 张三上报群报修 → 命中**遗留单歧义 clarify**（张三名下 4 个 OPEN：T0003/T0004/T0005"/help"/T0010）未建新单；clarify 确定性回复正确投递上报群（修复 2 生产验证）
+2. 于松泽上报群报修「B2 打印机卡纸」→ **T0013 建单 + 三面投递全对**：回执→上报群 oc_979f、详情→DM(open_id)、运维单→处理群 oc_54cd，全部 SENT_FEISHU，12.8s
+3. 张三 DM 查「T0003 处理得怎么样了」→ progress 确定性回复**落在 DM**（修复 2/S2 生产验证），33.4s
+
+### 群聊错位定案
+- 仅 **8/13 V1 时代回放数据**存在互换（T0001 首轮：REACTIVE_REPLY→处理群、OPERATOR_WORK_ITEM→上报群）；8/24 起 40+ 条 outbox **零错位**；现行 `TargetResolver.requester_public` 按 purpose+queue+channel 解析，无互换路径。
+- T0005「/help 建单」为旧代码缺陷，现行 `_chitchat_reply` 精确拦截（workflow.py:95），已不会复现。
+
+### 遗留（需 owner 决定）
+- 张三 4 个遗留 OPEN 工单会持续触发多单 clarify 挡新报修：T0005"/help"、T0010"你可以做什么"是纯噪音建议清掉；T0003（空调）/T0004（电脑）是 8/24-25 测试期旧单，确认后可走 force_close+审批链清理。
+- workflow 懒构建：SetFit 在首个 webhook 请求才加载（冷缓存 ~2min/热 ~5s），建议 `create_app` 加 startup 预热钩子。
+- 性能实测：agent 建单轮 12.8s（远好于记录的 20~122s，可能网络/模型波动），确定性轮 <1s。

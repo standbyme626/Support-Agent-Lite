@@ -8,6 +8,7 @@
 - **V2(Collaboration Layer)** AC-11 ~ AC-30:Conversation Purpose / Role / Canonical Operator / 三面可见性 / 事务性通知 Outbox / 官方协议契约 / 确认关闭 / HITL 执行链 / 并发修复
 - **V2.1(Agent Core)** AC-A01 ~ AC-A20:有状态有边界的 SupportAgent(AgentContext 全感知 → 有限只读工具 → 结构化 AgentDecision)、两阶段事务(LLM 不占写锁)、崩溃可恢复处理状态、PromptRegistry、Agent eval 套件、PRIVATE_DETAIL 首联直投、关闭后门收口、REST actor/role 信任边界
 - **V3(Enterprise Retrieval & Multi-Agent)** C9/C2/C10/B1:**五实体检索路由**(意图级工具白名单 + L4 实体拦截 + 脱敏输出)、**混合检索**(TF-IDF+向量 RRF 双路召回 + Qwen3-Reranker 重排,419 条中文语料)、**问数子代理**(NL→受限统计规格→只读执行,首个多 Agent 组件)、**LLM Provider 注册表**(openrouter/bailian/deepseek 内置,FallbackLLMClient)
+- **V2.2(意图级联 + SetFit 生产语义层)**:五意图级联路由(规则关键词快路径 → SetFit 本地语义层(微调 bge-small-zh,1.6ms/条,`INTENT_EMBEDDING=setfit`)→ other 兜底 never force-pick)、业务保底护栏(`SUPPORT_GUARD_TERMS`)+ 非对称意图阈值(support 0.55 宁错建单不漏单)、E2E 真人模拟测试(10 场景 24 断言)修复 4 个使用级缺陷(确定性回复投递/FAQ 全管线/规则词/报修漏单),office eval 82.6% / zh_golden 73.8%
 
 > 旧项目 `support-agent-platform` 以只读方式保存在 `reference/`,仅作参考,禁止修改/提交。
 
@@ -378,6 +379,34 @@ EntityGuard 正则拦截(手机号 / 身份证 / E0001 工号 / AST-0307 资产�
 
 ---
 
+## V2.2 意图级联(V2.2)
+
+> **先规则,后语义,never force-pick**:关键词层是确定性快路径(任何 ≥0.58 命中即赢,语义层不得覆盖);语义层只接管不含关键词的长尾;other 兜底拒答。
+
+```text
+用户输入
+   │
+   ▼
+IntentRouter(关键词,确定性)──命中(≥0.58)──► 直接采信,不做语义竞争
+   │ 未命中
+   ▼
+语义层(INTENT_EMBEDDING)
+   ├─ setfit(生产):本地 SetFit 微调 bge-small-zh(runtime/setfit-intent),
+   │   1.6ms/条、零 API 依赖、确定性;概率 <0.35 → other 低置信
+   └─ api(备用):SiliconFlow 锚点余弦(runtime/intent_anchors,255 条中英锚点)
+   │
+   ▼
+非对称意图阈值:support 0.55(宁错建单不漏单)/ progress 0.58 / faq 0.60 / chitchat 0.68
+   │ 仍低分
+   ▼
+other:有活跃单=续单(AC-12);含设备故障词=护栏建单(SUPPORT_GUARD_TERMS);
+      有 LLM=闲聊裁断(needs_human 才转人工);否则确定性回复,绝不乱建单
+```
+
+训练/评测资产与命令见 `MEMORY.md` 第二、三、九节;评测脚本 `scripts/eval_office_router.py`(office 82.6%)、`scripts/eval_intent_router.py`(zh 73.8%)、`scripts/train_setfit_intent.py`。
+
+---
+
 ## 消息处理流程图
 
 ### 入站流程(每条消息,V2.1 两阶段)
@@ -537,7 +566,7 @@ Notification(通知各方)
 | 检索 | TF-IDF 关键词路 + 向量混合(RRF 融合);向量库 numpy 默认 / Chroma 可选(`KB_VECTOR_BACKEND`) |
 | Embedding/Rerank | 硅基流动 Qwen3-Embedding-8B(4096 维)+ Qwen3-Reranker-8B(故障自动降级关键词路) |
 | LLM | Provider 注册表:OpenRouter / 阿里百炼 / DeepSeek 内置 + 通用 `<NAME>_API_KEY/_BASE_URL/_MODEL` env 解析 + FallbackLLMClient;未配置 / 超时 / 非法输出**自动降级为确定性规则** |
-| 测试 | pytest ≥ 8(unit / integration / acceptance / concurrency / protocol contract),278 个,强制离线封闭运行 |
+| 测试 | pytest ≥ 8(unit / integration / acceptance / concurrency / protocol contract),**396 个**(377 常规封闭 + 19 慢评测单独跑),强制离线封闭运行 |
 | 部署 | 单体 FastAPI 进程;Feishu 生产经 WebSocket 长连接桥(`scripts/feishu_ws_bridge.py`),无需公网回调 |
 
 ## 目录结构
@@ -741,7 +770,7 @@ WeCom 群  :  URL=…/cgi-bin/appchat/send?access_token=…
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pytest                 # 278 passed(离线、确定性、封闭运行)
+pytest                 # 377 passed(离线、确定性、封闭运行;两个慢评测文件默认排除)
 uvicorn app.main:app   # http://127.0.0.1:8000
 ```
 
@@ -838,7 +867,7 @@ curl -s http://127.0.0.1:8000/tickets/T0001/case
 
 | 指标 | 目标 | 实测 |
 | --- | --- | --- |
-| 全量测试 | — | **278 passed / 0 failed**(11 秒封闭运行) |
+| 全量测试 | — | **377 passed / 0 failed**(封闭运行;外部 embedding/LLM key 在测试中被屏蔽) |
 | Golden Path AC-01~AC-10 | 全绿 | 10/10 |
 | V2 验收 AC-11~AC-30 | 全绿 | 20/20 |
 | V2.1 Agent AC-A01~AC-A20 | 全绿 | 20/20 |
@@ -882,6 +911,23 @@ python scripts/feishu_ws_bridge.py
 > 注意:`.env` 中即使配置了 `REAL_CHANNEL_NETWORK=true` 与真实凭据,普通 `pytest` 仍不会联网——测试套件在 import 时强制离线,真实联网测试需 `RUN_REAL_CHANNEL_TESTS=1` 显式开启。
 
 当前唯一能力缺口:WeCom `GROUP_INBOUND`(官方文档未证明群消息回调携带 chat_id,标 `PENDING_OFFICIAL_SPEC`)。
+
+---
+
+## 生产运维(2026-08-29 落地)
+
+生产=开发机本机部署,飞书经 WebSocket 长连接桥(`scripts/feishu_ws_bridge.py`)接入,API 监听 `127.0.0.1:8322`。
+
+| 项 | 方式 |
+| --- | --- |
+| 进程看护 | 正式 systemd unit(`deploy/*.service`,`Restart=on-failure` + 开机自启);部署:`cp deploy/*.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now support-agent-api support-agent-feishu-bridge` |
+| 启动预热 | `create_app` startup 钩子预构建 workflow(SetFit 模型在端口绑定前加载完毕,首条消息不背冷启动) |
+| 通知投递 | webhook/REST 返回后经 BackgroundTasks 投递 outbox,不再阻塞请求;`SUPPORT_AGENT_DISPATCH_WORKER=1`(unit 内 Environment)启用 30s 后台 sweep,失败投递自动重试(≤3 次),不再依赖下一条消息捎带 |
+| 健康探活 | `scripts/ops/health_probe.sh` + cron 每分钟探 `http://127.0.0.1:8322/health`,失败写 `runtime/ops/health_alerts.log` |
+| DB 备份 | `scripts/ops/backup_db.sh` + cron 每日 `sqlite3 .backup` 到 `runtime/backups/`(保留 7 天) |
+| 密钥 | `.env` 600 权限;测试套件无条件屏蔽 `SILICONFLOW_API_KEY` 等外部 key,封闭性不依赖 shell 环境 |
+
+> 冒烟基线(2026-08-29,真实飞书链路):建单三面投递全对(回执→上报群/详情→DM/运维单→处理群,SENT_FEISHU)、私聊查进度落私聊、确定性 clarify 投递正常。
 
 ---
 
